@@ -204,7 +204,7 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
     <div class="hr"></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:8px">직접 입력 · 사진으로 자동 채우기</div>
     <input type="file" id="ocrFile" accept="image/*" capture="environment" hidden>
-    <button class="btn ghost sm" id="ocrBtn" style="width:100%">📷 영양정보 사진 찍어 자동 채우기</button>
+    <button class="btn ghost sm" id="ocrBtn" style="width:100%">📷 영양정보 사진 찍어 자동 채우기 (AI)</button>
     <div id="ocrStatus" class="muted" style="margin-top:6px;display:none;line-height:1.5"></div>
     <div class="grid2" style="margin-top:10px">
       <div><label class="fl">음식 이름</label><input id="cfName" placeholder="예: 집밥 반찬"></div>
@@ -1415,6 +1415,49 @@ async function runOcr(file){
     status.textContent='⚠️ 인식 실패 — 직접 입력해 주세요. ('+((err&&err.message)||err)+')';
   }
 }
+/* AI 비전 인식 (Supabase Edge Function → Gemini) */
+async function runVisionOcr(file){
+  const status=document.getElementById('ocrStatus');
+  status.style.display='block'; status.textContent='📷 이미지 준비 중…';
+  try{
+    if(typeof sb==='undefined' || !sb){ status.textContent='⚠️ 온라인 연결이 필요해요. 인터넷 상태를 확인한 뒤 다시 시도하세요.'; return; }
+    const { base64, mimeType } = await resizeToBase64(file, 1100);
+    status.textContent='🤖 AI가 영양정보를 읽는 중… (몇 초 걸려요)';
+    const { data, error } = await sb.functions.invoke('nutrition-ocr', { body:{ imageBase64: base64, mimeType } });
+    if(error){ status.textContent='⚠️ 요청 실패: '+error.message; return; }
+    if(!data || data.error){
+      if(data && data.error==='NO_KEY'){ status.textContent='ℹ️ AI 인식 키가 아직 설정되지 않았어요.'; return; }
+      status.textContent='⚠️ 인식 오류: '+((data&&(data.message||data.detail||data.error))||'알 수 없음'); return;
+    }
+    const r=data.result||{};
+    if(r.found===false){ status.textContent='⚠️ 사진에서 영양정보표를 찾지 못했어요. 표가 선명하게 보이도록 다시 찍어주세요.'; return; }
+    fillFromVision(r);
+    const got=['kcal','carb','protein','fat'].filter(k=>r[k]).length;
+    status.innerHTML='✅ AI가 읽었어요'+(r.basis?(' · 기준: <b>'+r.basis+'</b>'):'')+'. 값을 확인·수정 후 추가하세요.'+(got<2?'<br><span style="color:var(--sub)">일부만 읽혔어요 — 빈 값은 직접 채워주세요.</span>':'');
+  }catch(e){ status.textContent='⚠️ 실패: '+((e&&e.message)||e); }
+}
+function fillFromVision(r){
+  const set=(id,v)=>{ if(v!=null&&!isNaN(v)&&v>0) document.getElementById(id).value=v; };
+  set('cfKcal',r.kcal); set('cfCarb',r.carb); set('cfProt',r.protein); set('cfFat',r.fat);
+  const nm=document.getElementById('cfName'); if(nm && !nm.value && r.productName) nm.value=r.productName;
+  ocrExtra={ sodium: r.sodium||0 };
+}
+function resizeToBase64(file, maxW){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1, maxW/img.width);
+      const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const url=c.toDataURL('image/jpeg',0.82);
+      URL.revokeObjectURL(img.src);
+      res({ base64:url.split(',')[1], mimeType:'image/jpeg' });
+    };
+    img.onerror=()=>rej(new Error('이미지를 열 수 없어요'));
+    img.src=URL.createObjectURL(file);
+  });
+}
 
 /* ============ 모달: 운동 ============ */
 function openEx(){
@@ -1564,7 +1607,7 @@ document.getElementById('foodSearch').oninput=renderFoodList;
 document.getElementById('foodCancel').onclick=closeFood;
 document.getElementById('cfAdd').onclick=addCustomFood;
 document.getElementById('ocrBtn').onclick=()=>document.getElementById('ocrFile').click();
-document.getElementById('ocrFile').onchange=e=>{ const f=e.target.files[0]; if(f) runOcr(f); e.target.value=''; };
+document.getElementById('ocrFile').onchange=e=>{ const f=e.target.files[0]; if(f) runVisionOcr(f); e.target.value=''; };
 document.getElementById('pmCancel').onclick=()=>document.getElementById('portionModal').classList.remove('on');
 document.getElementById('pmAdd').onclick=addPortion;
 document.getElementById('pmQty').oninput=updatePortion;
