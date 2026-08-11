@@ -317,6 +317,33 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
   </div>
 </div>
 
+<!-- Supplement manage modal -->
+<div class="modal" id="suppModal">
+  <div class="sheet">
+    <h3>💊 영양제 추가 / 관리</h3>
+    <div id="suppList"></div>
+    <div class="hr"></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:8px">새 영양제 추가</div>
+    <div class="grid2">
+      <div><label class="fl">이름</label><input id="spName" placeholder="예: 철분제"></div>
+      <div><label class="fl">용량(표시용)</label><input id="spDose" placeholder="예: 30mg"></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--sub);margin:10px 0 4px">영양 반영(선택) — 체크 시 그래프에 자동 합산돼요</div>
+    <div class="grid2">
+      <div><label class="fl">엽산(µg)</label><input id="spFolate" type="number" inputmode="numeric" placeholder="0"></div>
+      <div><label class="fl">비타민D(IU)</label><input id="spVitD" type="number" inputmode="numeric" placeholder="0"></div>
+    </div>
+    <div class="grid2" style="margin-top:8px">
+      <div><label class="fl">철분(mg)</label><input id="spIron" type="number" placeholder="0"></div>
+      <div><label class="fl">칼슘(mg)</label><input id="spCalcium" type="number" placeholder="0"></div>
+    </div>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn ghost" id="suppClose" style="flex:1">닫기</button>
+      <button class="btn" id="suppAdd" style="flex:1">추가</button>
+    </div>
+  </div>
+</div>
+
 <!-- Auth overlay -->
 <div class="modal" id="authOverlay">
   <div class="sheet" style="max-width:420px">
@@ -347,13 +374,18 @@ const DEFAULT={
   settings:{ baseKcal:2000, height:160, prePreg:60, refWeek:20, refDate:'2026-08-01', waterTarget:2500 },
   inbody:null,
   weight:[],
-  diet:{}, exercise:{}, water:{}, updatedAt:0
+  supplements:[
+    {id:'folate', name:'엽산', dose:'1mg', emoji:'💊', nutrients:{folate:1000}},
+    {id:'vitd', name:'비타민D', dose:'2,000 IU', emoji:'☀️', nutrients:{vitD:2000}}
+  ],
+  diet:{}, exercise:{}, water:{}, suppLog:{}, updatedAt:0
 };
 function applyDefaults(p){
   const db=Object.assign({},JSON.parse(JSON.stringify(DEFAULT)),p||{});
   db.settings=Object.assign({},DEFAULT.settings,(p&&p.settings)||{});
   db.weight=(p&&p.weight)||JSON.parse(JSON.stringify(DEFAULT.weight));
-  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{};
+  db.supplements=(p&&p.supplements)||JSON.parse(JSON.stringify(DEFAULT.supplements));
+  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{};
   db.updatedAt=(p&&p.updatedAt)||0;
   return db;
 }
@@ -773,17 +805,30 @@ function targets(w){
   return {
     tri, kcal,
     carb: r0(kcal*0.55/4), protein: 55+pb, fat: r0(kcal*0.25/9),
-    fiber:25, folate:600, iron:24, calcium:700,
-    sodiumLimit:2000, caffeineLimit:200
+    fiber:25, folate:600, iron:24, calcium:700, vitD:600,
+    sodiumLimit:2000, caffeineLimit:200, vitDUL:4000
   };
 }
 
-/* 하루 식단 합계 */
+/* 하루 식단 합계 (음식 + 복용한 영양제) */
 function dayNutri(dateStr){
   const list=DB.diet[dateStr]||[];
-  const t={kcal:0,carb:0,protein:0,fat:0,fiber:0,folate:0,iron:0,calcium:0,sodium:0,caffeine:0};
+  const t={kcal:0,carb:0,protein:0,fat:0,fiber:0,folate:0,iron:0,calcium:0,sodium:0,caffeine:0,vitD:0};
   list.forEach(f=>{ for(const k in t) t[k]+= (f[k]||0); });
+  // 복용 체크한 영양제 반영
+  (DB.suppLog[dateStr]||[]).forEach(id=>{
+    const s=(DB.supplements||[]).find(x=>x.id===id);
+    if(s&&s.nutrients){ for(const k in s.nutrients){ t[k]=(t[k]||0)+s.nutrients[k]; } }
+  });
   return t;
+}
+function suppTaken(dateStr){ return (DB.suppLog[dateStr]||[]); }
+function toggleSupp(id){
+  const arr=DB.suppLog[SEL]||[];
+  const i=arr.indexOf(id);
+  if(i>=0) arr.splice(i,1); else arr.push(id);
+  if(arr.length) DB.suppLog[SEL]=arr; else delete DB.suppLog[SEL];
+  save(); renderDiet(); renderDash();
 }
 function dayBurn(dateStr){
   return (DB.exercise[dateStr]||[]).reduce((s,e)=>s+e.kcal,0);
@@ -820,14 +865,16 @@ function renderHeader(){
   document.getElementById('curDate').textContent=`${d.getMonth()+1}월 ${d.getDate()}일 (${wd})`;
 }
 
-function progressBar(label,val,target,unit,cls,limit){
+function progressBar(label,val,target,unit,cls,limit,goal){
   const pct=Math.min(100,(val/target)*100);
   const realPct=(val/target)*100;
   let c=cls||barClass(realPct);
   if(limit){ c = realPct<=100?'good':'over'; }
-  const badge = limit
-    ? (realPct<=100?'<span class="tag g">적정</span>':'<span class="tag o">초과</span>')
-    : (realPct<70?'<span class="tag w">부족</span>':realPct<=110?'<span class="tag g">적정</span>':'<span class="tag o">초과</span>');
+  else if(goal){ c = realPct<70?'warn':'good'; }
+  let badge;
+  if(limit) badge = realPct<=100?'<span class="tag g">적정</span>':'<span class="tag o">초과</span>';
+  else if(goal) badge = realPct<70?'<span class="tag w">부족</span>':'<span class="tag g">충족</span>';
+  else badge = realPct<70?'<span class="tag w">부족</span>':realPct<=110?'<span class="tag g">적정</span>':'<span class="tag o">초과</span>';
   return `<div class="bar"><div class="t"><b>${label} ${badge}</b><span class="n">${r0(val)} / ${target}${unit}</span></div>
     <div class="track"><div class="fill ${c}" style="width:${pct}%"></div></div></div>`;
 }
@@ -886,14 +933,17 @@ function renderDash(){
 
   <div class="card">
     <h2><span class="e">💊</span> 임신 핵심 영양소</h2>
-    ${progressBar('엽산 (신경관 형성)',n.folate,t.folate,'µg','peach')}
-    ${progressBar('철분 (빈혈 예방)',n.iron,t.iron,'mg','rose')}
-    ${progressBar('칼슘 (뼈·치아)',n.calcium,t.calcium,'mg','sky')}
-    ${progressBar('💧 수분',getWater(SEL),DB.settings.waterTarget||2500,'ml','sky')}
+    ${(()=>{const st=suppTaken(SEL),tot=(DB.supplements||[]).length; return tot?`<div class="info-b" style="margin-bottom:10px">💊 오늘 영양제 <b>${st.length}/${tot}</b> 복용${st.length<tot?' · 식단 탭에서 체크하세요':' ✅'}</div>`:'';})()}
+    ${progressBar('엽산 (신경관 형성)',n.folate,t.folate,'µg','peach',false,true)}
+    ${progressBar('철분 (빈혈 예방)',n.iron,t.iron,'mg','rose',false,true)}
+    ${progressBar('칼슘 (뼈·치아)',n.calcium,t.calcium,'mg','sky',false,true)}
+    ${progressBar('비타민D (뼈·면역)',n.vitD,t.vitD,'IU','gold',false,true)}
+    ${progressBar('💧 수분',getWater(SEL),DB.settings.waterTarget||2500,'ml','sky',false,true)}
     <div class="hr"></div>
     ${progressBar('나트륨 (제한)',n.sodium,t.sodiumLimit,'mg',null,true)}
     ${progressBar('카페인 (제한)',n.caffeine,t.caffeineLimit,'mg',null,true)}
     ${n.caffeine>200?`<div class="note" style="margin-top:8px"><span class="e">⚠️</span><div>카페인이 하루 권장 상한(200mg)을 넘었어요. 커피는 하루 1~2잔 이내로.</div></div>`:''}
+    ${n.vitD>t.vitDUL?`<div class="note" style="margin-top:8px"><span class="e">⚠️</span><div>비타민D가 하루 상한(4,000 IU)을 넘었어요. 담당 선생님과 용량을 확인해보세요.</div></div>`:''}
   </div>
 
   <div class="card">
@@ -1056,6 +1106,8 @@ function renderDiet(){
 
   ${waterCard()}
 
+  ${supplementCard()}
+
   <div class="card">
     <h2><span class="e">🥗</span> 영양 균형 (임신 ${g.w}주 · ${t.tri===1?'초기':t.tri===2?'중기':'후기'})</h2>
     ${progressBar('칼로리',n.kcal,t.kcal,'kcal')}
@@ -1064,10 +1116,11 @@ function renderDiet(){
     ${progressBar('지방',n.fat,t.fat,'g','gold')}
     ${progressBar('식이섬유',n.fiber,t.fiber,'g','peach')}
     <div class="hr"></div>
-    <h3 class="sec">임신 핵심 미량영양소</h3>
-    ${progressBar('엽산',n.folate,t.folate,'µg','peach')}
-    ${progressBar('철분',n.iron,t.iron,'mg','rose')}
-    ${progressBar('칼슘',n.calcium,t.calcium,'mg','sky')}
+    <h3 class="sec">임신 핵심 미량영양소 (음식+영양제 합산)</h3>
+    ${progressBar('엽산',n.folate,t.folate,'µg','peach',false,true)}
+    ${progressBar('철분',n.iron,t.iron,'mg','rose',false,true)}
+    ${progressBar('칼슘',n.calcium,t.calcium,'mg','sky',false,true)}
+    ${progressBar('비타민D',n.vitD,t.vitD,'IU','gold',false,true)}
     ${progressBar('나트륨(제한)',n.sodium,t.sodiumLimit,'mg',null,true)}
     ${progressBar('카페인(제한)',n.caffeine,t.caffeineLimit,'mg',null,true)}
     ${nutriTips(n,t)}
@@ -1079,6 +1132,31 @@ function renderDiet(){
   });
   el.querySelectorAll('[data-water]').forEach(b=>b.onclick=()=>addWater(+b.dataset.water));
   const wu=el.querySelector('#waterUndo'); if(wu) wu.onclick=undoWater;
+  el.querySelectorAll('[data-supp]').forEach(b=>b.onclick=()=>toggleSupp(b.dataset.supp));
+  const sm=el.querySelector('#suppManage'); if(sm) sm.onclick=openSuppManage;
+}
+function supplementCard(){
+  const taken=suppTaken(SEL), sups=DB.supplements||[];
+  const rows = sups.length ? sups.map(s=>{
+    const on=taken.indexOf(s.id)>=0;
+    return `<div class="item" data-supp="${s.id}" style="cursor:pointer">
+      <div class="ic" style="${on?'background:var(--sage);':''}">${on?'✓':s.emoji}</div>
+      <div class="nm"><b>${s.name}</b><span>${s.dose||''}${nutrientHint(s)}</span></div>
+      <div class="kc" style="color:${on?'var(--sage-d)':'var(--sub)'};font-weight:700">${on?'복용':'미복용'}</div>
+    </div>`;
+  }).join('') : '<div class="empty">등록된 영양제가 없어요</div>';
+  return `<div class="card">
+    <h2><span class="e">💊</span> 오늘의 영양제<span style="margin-left:auto;font-size:13px;color:var(--sub);font-weight:700">${taken.length}/${sups.length} 복용</span></h2>
+    <div class="muted" style="margin-bottom:6px">탭하면 복용 체크돼요. 체크한 영양제는 영양 그래프에 자동 반영됩니다.</div>
+    ${rows}
+    <button class="btn ghost sm" id="suppManage" style="width:100%;margin-top:10px">＋ 영양제 추가 / 관리</button>
+  </div>`;
+}
+function nutrientHint(s){
+  const map={folate:'엽산',iron:'철분',calcium:'칼슘',vitD:'비타민D'};
+  const units={folate:'µg',iron:'mg',calcium:'mg',vitD:'IU'};
+  const parts=[]; if(s.nutrients){ for(const k in s.nutrients){ parts.push((map[k]||k)+' '+s.nutrients[k]+(units[k]||'')); } }
+  return parts.length? ' · '+parts.join(', ') : '';
 }
 function waterCard(){
   const wt=DB.settings.waterTarget||2500;
@@ -1332,6 +1410,37 @@ function saveSettings(){
   save(); document.getElementById('setModal').classList.remove('on'); renderAll();
 }
 
+/* ============ 영양제 관리 ============ */
+function openSuppManage(){ renderSuppList(); document.getElementById('suppModal').classList.add('on'); }
+function renderSuppList(){
+  const el=document.getElementById('suppList');
+  el.innerHTML=(DB.supplements||[]).map(s=>`
+    <div class="item">
+      <div class="ic">${s.emoji||'💊'}</div>
+      <div class="nm"><b>${s.name}</b><span>${s.dose||''}${nutrientHint(s)}</span></div>
+      <button class="del" data-spdel="${s.id}">✕</button>
+    </div>`).join('')||'<div class="empty">등록된 영양제가 없어요. 아래에서 추가하세요.</div>';
+  el.querySelectorAll('[data-spdel]').forEach(b=>b.onclick=()=>{
+    DB.supplements=(DB.supplements||[]).filter(x=>x.id!==b.dataset.spdel);
+    for(const d in DB.suppLog){ DB.suppLog[d]=DB.suppLog[d].filter(id=>id!==b.dataset.spdel); if(!DB.suppLog[d].length) delete DB.suppLog[d]; }
+    save(); renderSuppList(); renderDiet(); renderDash();
+  });
+}
+function addSupp(){
+  const name=document.getElementById('spName').value.trim();
+  if(!name){ alert('영양제 이름을 입력해주세요'); return; }
+  const dose=document.getElementById('spDose').value.trim();
+  const nutrients={};
+  const folate=parseFloat(document.getElementById('spFolate').value)||0; if(folate) nutrients.folate=folate;
+  const vitD=parseFloat(document.getElementById('spVitD').value)||0; if(vitD) nutrients.vitD=vitD;
+  const iron=parseFloat(document.getElementById('spIron').value)||0; if(iron) nutrients.iron=iron;
+  const calcium=parseFloat(document.getElementById('spCalcium').value)||0; if(calcium) nutrients.calcium=calcium;
+  (DB.supplements=DB.supplements||[]).push({id:'s'+Date.now(),name,dose,emoji:'💊',nutrients});
+  save();
+  ['spName','spDose','spFolate','spVitD','spIron','spCalcium'].forEach(x=>document.getElementById(x).value='');
+  renderSuppList(); renderDiet(); renderDash();
+}
+
 /* ============ 내보내기/가져오기 ============ */
 function exportData(){
   const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
@@ -1382,6 +1491,8 @@ document.getElementById('wCancel').onclick=()=>document.getElementById('wModal')
 document.getElementById('wSave').onclick=saveWeight;
 document.getElementById('setCancel').onclick=()=>document.getElementById('setModal').classList.remove('on');
 document.getElementById('setSave').onclick=saveSettings;
+document.getElementById('suppClose').onclick=()=>document.getElementById('suppModal').classList.remove('on');
+document.getElementById('suppAdd').onclick=addSupp;
 document.getElementById('exportBtn').onclick=exportData;
 document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
 document.getElementById('importFile').onchange=e=>{if(e.target.files[0])importData(e.target.files[0]);};
