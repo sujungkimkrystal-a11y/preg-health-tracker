@@ -297,11 +297,8 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
 <div class="modal" id="setModal">
   <div class="sheet">
     <h3>⚙️ 설정</h3>
-    <div class="grid2">
-      <div><label class="fl">현재 임신 주차</label><input id="stWeek" type="number" placeholder="18"></div>
-      <div><label class="fl">기준 날짜</label><input id="stWeekDate" type="date"></div>
-    </div>
-    <p class="muted" style="margin:4px 0 12px">위 값 기준으로 매일 주차가 자동 계산돼요. 출산예정일도 함께 갱신됩니다.</p>
+    <div><label class="fl">출산예정일 (EDD)</label><input id="stEDD" type="date"></div>
+    <p class="muted" style="margin:4px 0 12px">병원에서 받은 출산예정일을 입력하면 임신 주차가 매일 자동 계산돼요.</p>
     <div class="grid2">
       <div><label class="fl">키(cm)</label><input id="stHeight" type="number" placeholder="158"></div>
       <div><label class="fl">임신 전 체중(kg)</label><input id="stPre" type="number" step="0.1" placeholder="55"></div>
@@ -381,7 +378,7 @@ const SYNC_TABLE='pregnancy_state';
 /* ============ 데이터 저장 ============ */
 const KEY='preg_health_v1';
 const DEFAULT={
-  settings:{ baseKcal:2000, height:160, prePreg:60, refWeek:20, refDate:'2026-08-01', waterTarget:2500 },
+  settings:{ baseKcal:2000, height:160, prePreg:60, refWeek:0, refDate:'2026-06-01', waterTarget:2500 },
   inbody:null,
   weight:[],
   supplements:[
@@ -1520,8 +1517,7 @@ function saveWeight(){
 }
 function openSettings(){
   const s=DB.settings;
-  document.getElementById('stWeek').value=s.refWeek;
-  document.getElementById('stWeekDate').value=s.refDate;
+  document.getElementById('stEDD').value=edd();
   document.getElementById('stHeight').value=s.height;
   document.getElementById('stPre').value=s.prePreg;
   document.getElementById('stBase').value=s.baseKcal;
@@ -1531,8 +1527,8 @@ function openSettings(){
 }
 function saveSettings(){
   const s=DB.settings;
-  s.refWeek=parseInt(document.getElementById('stWeek').value)||s.refWeek;
-  s.refDate=document.getElementById('stWeekDate').value||s.refDate;
+  const eddV=document.getElementById('stEDD').value;
+  if(eddV){ s.refDate=addDays(eddV,-280); s.refWeek=0; }
   s.height=parseFloat(document.getElementById('stHeight').value)||s.height;
   s.prePreg=parseFloat(document.getElementById('stPre').value)||s.prePreg;
   s.baseKcal=parseInt(document.getElementById('stBase').value)||s.baseKcal;
