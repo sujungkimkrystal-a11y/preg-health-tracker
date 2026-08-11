@@ -202,8 +202,11 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
     <div class="chips" id="catChips"></div>
     <div class="searchres" id="foodResults"></div>
     <div class="hr"></div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:8px">직접 입력</div>
-    <div class="grid2">
+    <div style="font-size:12px;color:var(--sub);margin-bottom:8px">직접 입력 · 사진으로 자동 채우기</div>
+    <input type="file" id="ocrFile" accept="image/*" capture="environment" hidden>
+    <button class="btn ghost sm" id="ocrBtn" style="width:100%">📷 영양정보 사진 찍어 자동 채우기</button>
+    <div id="ocrStatus" class="muted" style="margin-top:6px;display:none;line-height:1.5"></div>
+    <div class="grid2" style="margin-top:10px">
       <div><label class="fl">음식 이름</label><input id="cfName" placeholder="예: 집밥 반찬"></div>
       <div><label class="fl">칼로리(kcal)</label><input id="cfKcal" type="number" inputmode="numeric" placeholder="예: 250"></div>
     </div>
@@ -1281,7 +1284,7 @@ function openFood(meal){
   curMeal = MEALS.some(m=>m.k===meal)?meal:'아침';
   const mm=MEALS.find(m=>m.k===curMeal);
   document.querySelector('#foodModal h3').textContent=`${mm.e} ${curMeal} — 음식 추가`;
-  document.getElementById('foodModal').classList.add('on'); document.getElementById('foodSearch').value=''; curCat='전체'; renderFoodList(); document.getElementById('foodSearch').focus();
+  document.getElementById('foodModal').classList.add('on'); document.getElementById('foodSearch').value=''; curCat='전체'; renderFoodList(); ocrReset(); document.getElementById('foodSearch').focus();
 }
 function closeFood(){ document.getElementById('foodModal').classList.remove('on'); }
 function renderCatChips(){
@@ -1330,10 +1333,87 @@ function addCustomFood(){
   const carb=parseFloat(document.getElementById('cfCarb').value)||0;
   const protein=parseFloat(document.getElementById('cfProt').value)||0;
   const fat=parseFloat(document.getElementById('cfFat').value)||0;
-  (DB.diet[SEL]=DB.diet[SEL]||[]).push({name,emoji:'🍽️',meal:curMeal,kcal,carb,protein,fat,fiber:0,folate:0,iron:0,calcium:0,sodium:0,caffeine:0});
+  const sodium=(ocrExtra&&ocrExtra.sodium)||0;
+  (DB.diet[SEL]=DB.diet[SEL]||[]).push({name,emoji:'🍽️',meal:curMeal,kcal,carb,protein,fat,fiber:0,folate:0,iron:0,calcium:0,sodium,caffeine:0});
   save();
   ['cfName','cfKcal','cfCarb','cfProt','cfFat'].forEach(id=>document.getElementById(id).value='');
+  ocrReset();
   closeFood(); renderDiet(); renderDash();
+}
+
+/* ============ 영양정보 사진 OCR (기기 내 처리) ============ */
+let ocrExtra=null;
+function ocrReset(){ ocrExtra=null; const s=document.getElementById('ocrStatus'); if(s){ s.style.display='none'; s.textContent=''; } }
+function ensureTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('OCR 라이브러리 로드 실패'));
+    document.head.appendChild(s);
+  });
+}
+function preprocessImage(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const maxW=1500, scale=Math.min(1, maxW/img.width);
+      const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const x=c.getContext('2d'); x.drawImage(img,0,0,w,h);
+      try{
+        const im=x.getImageData(0,0,w,h), d=im.data;
+        for(let i=0;i<d.length;i+=4){
+          let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+          g = g<115 ? g*0.55 : Math.min(255,(g-115)*1.7+130); // 대비 강화
+          d[i]=d[i+1]=d[i+2]=g;
+        }
+        x.putImageData(im,0,0);
+      }catch(e){}
+      URL.revokeObjectURL(img.src);
+      res(c);
+    };
+    img.onerror=()=>rej(new Error('이미지를 열 수 없어요'));
+    img.src=URL.createObjectURL(file);
+  });
+}
+function pnum(t,re){ const m=t.match(re); return m?parseFloat(m[1]):null; }
+function parseNutrition(text){
+  const t=(text||'').replace(/,/g,'').replace(/\s+/g,' ');
+  const kcal = pnum(t,/(\d{1,4})\s*k?cal/i) ?? pnum(t,/(?:열량|칼로리)\D{0,6}(\d{1,4})/);
+  const carb = pnum(t,/탄수화물\D{0,6}(\d{1,3}(?:\.\d)?)/);
+  const sugar = pnum(t,/당류\D{0,6}(\d{1,3}(?:\.\d)?)/);
+  const protein = pnum(t,/단백질\D{0,6}(\d{1,3}(?:\.\d)?)/);
+  const fat = pnum(t,/(?<![화스])지방\D{0,6}(\d{1,3}(?:\.\d)?)/) ?? pnum(t,/지방\D{0,6}(\d{1,3}(?:\.\d)?)/);
+  const sodium = pnum(t,/나트륨\D{0,6}(\d{1,4}(?:\.\d)?)/);
+  return {kcal,carb,sugar,protein,fat,sodium};
+}
+function fillFromOcr(p){
+  const set=(id,v)=>{ if(v!=null&&!isNaN(v)) document.getElementById(id).value=v; };
+  set('cfKcal',p.kcal); set('cfCarb',p.carb); set('cfProt',p.protein); set('cfFat',p.fat);
+  ocrExtra={ sodium:p.sodium||0 };
+}
+async function runOcr(file){
+  const status=document.getElementById('ocrStatus');
+  status.style.display='block'; status.textContent='📷 이미지 준비 중…';
+  try{
+    await ensureTesseract();
+    const canvas=await preprocessImage(file);
+    status.textContent='🔍 인식 준비 중… (처음 실행 시 언어데이터 다운로드로 20~40초 걸릴 수 있어요)';
+    const res=await Tesseract.recognize(canvas,'kor+eng',{ logger:m=>{
+      if(m&&m.status==='recognizing text') status.textContent='🔍 글자 인식 중… '+Math.round((m.progress||0)*100)+'%';
+      else if(m&&m.status&&/load|down|initia/i.test(m.status)) status.textContent='⏬ 언어데이터 준비 중…';
+    }});
+    const text=(res&&res.data&&res.data.text)||'';
+    const p=parseNutrition(text);
+    fillFromOcr(p);
+    const got=[p.kcal,p.carb,p.protein,p.fat].filter(v=>v!=null).length;
+    status.innerHTML = got
+      ? '✅ <b>'+got+'개 항목</b>을 읽었어요. 아래 값을 확인·수정한 뒤 추가하세요.<br><span style="color:var(--sub)">※ 라벨이 1회 제공량/총량/100g 기준일 수 있으니 숫자를 확인해주세요.</span>'
+      : '⚠️ 값을 자동으로 못 읽었어요. 더 밝고 반듯하게 다시 찍거나 직접 입력해 주세요.';
+  }catch(err){
+    status.textContent='⚠️ 인식 실패 — 직접 입력해 주세요. ('+((err&&err.message)||err)+')';
+  }
 }
 
 /* ============ 모달: 운동 ============ */
@@ -1483,6 +1563,8 @@ document.getElementById('settingsBtn').onclick=openSettings;
 document.getElementById('foodSearch').oninput=renderFoodList;
 document.getElementById('foodCancel').onclick=closeFood;
 document.getElementById('cfAdd').onclick=addCustomFood;
+document.getElementById('ocrBtn').onclick=()=>document.getElementById('ocrFile').click();
+document.getElementById('ocrFile').onchange=e=>{ const f=e.target.files[0]; if(f) runOcr(f); e.target.value=''; };
 document.getElementById('pmCancel').onclick=()=>document.getElementById('portionModal').classList.remove('on');
 document.getElementById('pmAdd').onclick=addPortion;
 document.getElementById('pmQty').oninput=updatePortion;
