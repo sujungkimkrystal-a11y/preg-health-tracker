@@ -277,6 +277,45 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
   </div>
 </div>
 
+<!-- Strength reps/weight modal -->
+<div class="modal" id="exRepModal">
+  <div class="sheet">
+    <h3 id="erTitle">근력운동</h3>
+    <p class="muted" id="erMeta"></p>
+    <div class="grid2" style="margin-top:10px">
+      <div>
+        <label class="fl">무게 (kg)</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="iconbtn" id="erWMinus">−</button>
+          <input id="erWeight" type="number" step="1" value="10" style="text-align:center;font-size:17px;font-weight:700">
+          <button class="iconbtn" id="erWPlus">+</button>
+        </div>
+      </div>
+      <div>
+        <label class="fl">횟수 (회)</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="iconbtn" id="erRMinus">−</button>
+          <input id="erReps" type="number" step="1" value="15" style="text-align:center;font-size:17px;font-weight:700">
+          <button class="iconbtn" id="erRPlus">+</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <label class="fl">세트 수</label>
+      <div style="display:flex;align-items:center;gap:8px;max-width:180px">
+        <button class="iconbtn" id="erSMinus">−</button>
+        <input id="erSets" type="number" step="1" value="1" style="text-align:center;font-size:17px;font-weight:700">
+        <button class="iconbtn" id="erSPlus">+</button>
+      </div>
+    </div>
+    <div class="info-b" id="erPreview" style="margin-top:12px"></div>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn ghost" id="erCancel" style="flex:1">취소</button>
+      <button class="btn" id="erAdd" style="flex:1">추가</button>
+    </div>
+  </div>
+</div>
+
 <!-- Weight modal -->
 <div class="modal" id="wModal">
   <div class="sheet">
@@ -392,6 +431,8 @@ function applyDefaults(p){
   db.settings=Object.assign({},DEFAULT.settings,(p&&p.settings)||{});
   db.weight=(p&&p.weight)||JSON.parse(JSON.stringify(DEFAULT.weight));
   db.supplements=(p&&p.supplements)||JSON.parse(JSON.stringify(DEFAULT.supplements));
+  // 저장된 목록에 없는 기본 영양제를 자동으로 채워줌 (id 기준, 중복 없이)
+  DEFAULT.supplements.forEach(ds=>{ if(!db.supplements.some(s=>s.id===ds.id)) db.supplements.push(JSON.parse(JSON.stringify(ds))); });
   db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{};
   db.updatedAt=(p&&p.updatedAt)||0;
   return db;
@@ -785,6 +826,23 @@ const EXES=[
  ["계단 오르기",4.0,"🪜","난간 잡고 천천히"]
 ];
 
+/* ============ 근력운동 DB (횟수·무게 기준) ============ */
+/* [이름, 기본무게(kg), 이모지, 임신적합메모] · 기본 15회 */
+/* 소비칼로리(kcal) = 무게(kg) × 횟수 × 세트 ÷ 30
+   (근력운동 표준 추정식 "든 총무게 ÷ 150 × 5"를 kg 기준으로 정리한 값. 가벼운 좌식 머신 기준 근사치) */
+const STRENGTH=[
+ ["이너사이 (모음근)",10,"🦵","좌식 머신, 무리한 각도 벌리기 주의"],
+ ["리어델토이드",5,"💪","좌식 상체, 가벼운 무게로"],
+ ["랫풀다운",10,"🧗‍♀️","좌식 등운동, 바를 가슴 쪽으로"],
+ ["시티드로우",10,"🚣‍♀️","좌식 등운동, 허리 곧게"],
+ ["체스트프레스",5,"🏋️‍♀️","등받이 세운 좌식 자세로"],
+ ["펙덱플라이",5,"🦋","좌식 가슴, 반동 없이"],
+ ["레그컬",15,"🦵","좌식(seated) 기구 권장"],
+ ["레그익스텐션",15,"🦿","좌식 대퇴, 천천히 조절"]
+];
+const STRENGTH_COEF=1/30; /* kcal per (kg·회) */
+function strKcal(weight,reps,sets){ return weight*reps*sets*STRENGTH_COEF; }
+
 /* ============ 유틸 ============ */
 const pad=n=>String(n).padStart(2,'0');
 function fmt(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -1160,8 +1218,8 @@ function supplementCard(){
   </div>`;
 }
 function nutrientHint(s){
-  const map={folate:'엽산',iron:'철분',calcium:'칼슘',vitD:'비타민D'};
-  const units={folate:'µg',iron:'mg',calcium:'mg',vitD:'IU'};
+  const map={folate:'엽산',iron:'철분',calcium:'칼슘',vitD:'비타민D',kcal:'열량',carb:'탄수',protein:'단백',fat:'지방',zinc:'아연'};
+  const units={folate:'µg',iron:'mg',calcium:'mg',vitD:'IU',kcal:'kcal',carb:'g',protein:'g',fat:'g',zinc:'mg'};
   const parts=[]; if(s.nutrients){ for(const k in s.nutrients){ parts.push((map[k]||k)+' '+s.nutrients[k]+(units[k]||'')); } }
   return parts.length? ' · '+parts.join(', ') : '';
 }
@@ -1231,7 +1289,7 @@ function renderExercise(){
       ${list.map((e,i)=>`
         <div class="item">
           <div class="ic">${e.emoji||'🏃‍♀️'}</div>
-          <div class="nm"><b>${e.name}</b><span>${e.min}분 · MET ${e.met}</span></div>
+          <div class="nm"><b>${e.name}</b><span>${e.type==='strength'?`${e.weight}kg × ${e.reps}회${e.sets>1?` × ${e.sets}세트`:''}`:`${e.min}분 · MET ${e.met}`}</span></div>
           <div class="kc">${r0(e.kcal)}<span style="font-size:10px;font-weight:400"> kcal</span></div>
           <button class="del" data-edel="${i}">✕</button>
         </div>`).join('')||'<div class="empty">오늘 운동을 기록해보세요 🏃‍♀️</div>'}
@@ -1424,7 +1482,11 @@ async function runVisionOcr(file){
     if(error){ status.textContent='⚠️ 요청 실패: '+error.message; return; }
     if(!data || data.error){
       if(data && data.error==='NO_KEY'){ status.textContent='ℹ️ AI 인식 키가 아직 설정되지 않았어요.'; return; }
-      status.textContent='⚠️ 인식 오류: '+((data&&(data.message||data.detail||data.error))||'알 수 없음'); return;
+      const st=data&&data.status, dt=String((data&&(data.detail||data.message))||'');
+      if(data&&data.attempts) console.warn('nutrition-ocr 실패', data.attempts);
+      if(st===429){ status.textContent='⏳ AI 사용량이 잠시 한도에 도달했어요. 1~2분 뒤 다시 시도해 주세요.'; return; }
+      if(st>=500||st===0){ status.textContent='⏳ AI 서버가 잠시 불안정해요. 잠시 후 다시 시도하거나 직접 입력해 주세요.'; return; }
+      status.textContent='⚠️ 인식 오류'+(st?(' ('+st+')'):'')+(dt?': '+dt.slice(0,120):'')+' — 직접 입력도 가능해요.'; return;
     }
     const r=data.result||{};
     if(r.found===false){ status.textContent='⚠️ 사진에서 영양정보표를 찾지 못했어요. 표가 선명하게 보이도록 다시 찍어주세요.'; return; }
@@ -1459,13 +1521,23 @@ function resizeToBase64(file, maxW){
 /* ============ 모달: 운동 ============ */
 function openEx(){
   document.getElementById('exModal').classList.add('on');
-  document.getElementById('exList').innerHTML=EXES.map((e,i)=>`
+  const cardio=EXES.map((e,i)=>`
     <div class="item" data-ex="${i}" style="cursor:pointer">
       <div class="ic">${e[2]}</div>
       <div class="nm"><b>${e[0]}</b><span>MET ${e[1]} · ${e[3]}</span></div>
       <button class="btn ghost sm">선택</button>
     </div>`).join('');
-  document.querySelectorAll('#exList .item').forEach(it=>it.onclick=()=>openExTime(EXES[+it.dataset.ex]));
+  const strength=STRENGTH.map((e,i)=>`
+    <div class="item" data-str="${i}" style="cursor:pointer">
+      <div class="ic">${e[2]}</div>
+      <div class="nm"><b>${e[0]}</b><span>기본 ${e[1]}kg · ${e[3]}</span></div>
+      <button class="btn ghost sm">선택</button>
+    </div>`).join('');
+  document.getElementById('exList').innerHTML=
+    `<h3 class="sec" style="margin-top:0">🚶‍♀️ 유산소·활동 <span style="font-weight:400">(시간 기준)</span></h3>${cardio}`+
+    `<h3 class="sec">🏋️‍♀️ 근력운동 <span style="font-weight:400">(횟수·무게 기준)</span></h3>${strength}`;
+  document.querySelectorAll('#exList [data-ex]').forEach(it=>it.onclick=()=>openExTime(EXES[+it.dataset.ex]));
+  document.querySelectorAll('#exList [data-str]').forEach(it=>it.onclick=()=>openExReps(STRENGTH[+it.dataset.str]));
 }
 let pEx=null;
 function openExTime(e){
@@ -1489,6 +1561,38 @@ function addExTime(){
   (DB.exercise[SEL]=DB.exercise[SEL]||[]).push({name:pEx[0],emoji:pEx[2],met:pEx[1],min,kcal});
   save();
   document.getElementById('exTimeModal').classList.remove('on'); renderExercise(); renderDash();
+}
+
+/* ── 근력운동(횟수·무게) ── */
+let pStr=null;
+function openExReps(e){
+  pStr=e;
+  document.getElementById('exModal').classList.remove('on');
+  document.getElementById('exRepModal').classList.add('on');
+  document.getElementById('erTitle').textContent=e[2]+' '+e[0];
+  document.getElementById('erMeta').textContent=e[3]+' · 소비칼로리 = 무게 × 횟수 × 세트 ÷ 30';
+  document.getElementById('erWeight').value=e[1];
+  document.getElementById('erReps').value=15;
+  document.getElementById('erSets').value=1;
+  updateExReps();
+}
+function updateExReps(){
+  const w=parseFloat(document.getElementById('erWeight').value)||0;
+  const reps=parseFloat(document.getElementById('erReps').value)||0;
+  const sets=parseFloat(document.getElementById('erSets').value)||0;
+  const kcal=strKcal(w,reps,sets);
+  document.getElementById('erPreview').innerHTML=`약 <b>${r0(kcal)} kcal</b> 소비 (${w}kg × ${reps}회 × ${sets}세트)`;
+}
+function addExReps(){
+  const w=parseFloat(document.getElementById('erWeight').value)||0;
+  const reps=parseFloat(document.getElementById('erReps').value)||0;
+  const sets=parseFloat(document.getElementById('erSets').value)||0;
+  if(w<=0||reps<=0||sets<=0)return;
+  const kcal=strKcal(w,reps,sets);
+  const min=Math.max(1,Math.round(sets*1.5)); /* 세트당 약 1.5분(동작+휴식) 근사 */
+  (DB.exercise[SEL]=DB.exercise[SEL]||[]).push({name:pStr[0],emoji:pStr[2],type:'strength',weight:w,reps,sets,min,kcal});
+  save();
+  document.getElementById('exRepModal').classList.remove('on'); renderExercise(); renderDash();
 }
 function addCustomEx(){
   const name=document.getElementById('cxName').value.trim();
@@ -1615,6 +1719,15 @@ document.getElementById('etAdd').onclick=addExTime;
 document.getElementById('etMin').oninput=updateExTime;
 document.getElementById('etMinus').onclick=()=>{const i=document.getElementById('etMin');i.value=Math.max(5,(parseFloat(i.value)||30)-5);updateExTime();};
 document.getElementById('etPlus').onclick=()=>{const i=document.getElementById('etMin');i.value=(parseFloat(i.value)||30)+5;updateExTime();};
+document.getElementById('erCancel').onclick=()=>document.getElementById('exRepModal').classList.remove('on');
+document.getElementById('erAdd').onclick=addExReps;
+['erWeight','erReps','erSets'].forEach(id=>document.getElementById(id).oninput=updateExReps);
+document.getElementById('erWMinus').onclick=()=>{const i=document.getElementById('erWeight');i.value=Math.max(1,(parseFloat(i.value)||1)-1);updateExReps();};
+document.getElementById('erWPlus').onclick=()=>{const i=document.getElementById('erWeight');i.value=(parseFloat(i.value)||0)+1;updateExReps();};
+document.getElementById('erRMinus').onclick=()=>{const i=document.getElementById('erReps');i.value=Math.max(1,(parseFloat(i.value)||1)-1);updateExReps();};
+document.getElementById('erRPlus').onclick=()=>{const i=document.getElementById('erReps');i.value=(parseFloat(i.value)||0)+1;updateExReps();};
+document.getElementById('erSMinus').onclick=()=>{const i=document.getElementById('erSets');i.value=Math.max(1,(parseFloat(i.value)||1)-1);updateExReps();};
+document.getElementById('erSPlus').onclick=()=>{const i=document.getElementById('erSets');i.value=(parseFloat(i.value)||0)+1;updateExReps();};
 document.getElementById('wCancel').onclick=()=>document.getElementById('wModal').classList.remove('on');
 document.getElementById('wSave').onclick=saveWeight;
 document.getElementById('setCancel').onclick=()=>document.getElementById('setModal').classList.remove('on');
