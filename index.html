@@ -205,7 +205,12 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
     <div class="hr"></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:8px">직접 입력 · 사진으로 자동 채우기</div>
     <input type="file" id="ocrFile" accept="image/*" capture="environment" hidden>
-    <button class="btn ghost sm" id="ocrBtn" style="width:100%">📷 영양정보 사진 찍어 자동 채우기 (AI)</button>
+    <input type="file" id="ocrFileLib" accept="image/*" hidden>
+    <div style="font-size:11.5px;color:var(--sub);margin-bottom:6px">영양정보표를 AI가 읽어 아래 값을 자동으로 채워줘요</div>
+    <div class="btnrow">
+      <button class="btn ghost sm" id="ocrBtn" style="flex:1">📷 사진 찍기</button>
+      <button class="btn ghost sm" id="ocrLibBtn" style="flex:1">🖼️ 저장한 사진</button>
+    </div>
     <div id="ocrStatus" class="muted" style="margin-top:6px;display:none;line-height:1.5"></div>
     <div class="grid2" style="margin-top:10px">
       <div><label class="fl">음식 이름</label><input id="cfName" placeholder="예: 집밥 반찬"></div>
@@ -426,7 +431,7 @@ const DEFAULT={
     {id:'vitd', name:'비타민D', dose:'2,000 IU', emoji:'☀️', nutrients:{vitD:2000}},
     {id:'lactofit', name:'락토핏 유산균', dose:'1포(2g) · 40억 CFU', emoji:'🦠', nutrients:{kcal:10, carb:2, zinc:2.55}}
   ],
-  diet:{}, exercise:{}, water:{}, suppLog:{}, customFoods:[], updatedAt:0
+  diet:{}, exercise:{}, water:{}, suppLog:{}, stool:{}, customFoods:[], updatedAt:0
 };
 function applyDefaults(p){
   const db=Object.assign({},JSON.parse(JSON.stringify(DEFAULT)),p||{});
@@ -435,7 +440,7 @@ function applyDefaults(p){
   db.supplements=(p&&p.supplements)||JSON.parse(JSON.stringify(DEFAULT.supplements));
   // 저장된 목록에 없는 기본 영양제를 자동으로 채워줌 (id 기준, 중복 없이)
   DEFAULT.supplements.forEach(ds=>{ if(!db.supplements.some(s=>s.id===ds.id)) db.supplements.push(JSON.parse(JSON.stringify(ds))); });
-  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{};
+  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{}; db.stool=(p&&p.stool)||{};
   db.customFoods=(p&&p.customFoods)||[];
   db.updatedAt=(p&&p.updatedAt)||0;
   return db;
@@ -904,6 +909,8 @@ function dayBurn(dateStr){
 function getWater(dateStr){ return (DB.water[dateStr]||[]).reduce((a,b)=>a+b,0); }
 function addWater(ml){ (DB.water[SEL]=DB.water[SEL]||[]).push(ml); save(); renderDiet(); renderDash(); }
 function undoWater(){ const l=DB.water[SEL]; if(l&&l.length){ l.pop(); if(!l.length) delete DB.water[SEL]; save(); renderDiet(); renderDash(); } }
+function getStool(dateStr){ return DB.stool[dateStr]||0; }
+function addStool(delta){ const c=Math.max(0,(DB.stool[SEL]||0)+delta); if(c>0) DB.stool[SEL]=c; else delete DB.stool[SEL]; save(); renderBody(); }
 function latestWeight(uptoDate){
   const sorted=[...DB.weight].filter(w=>w.date<=(uptoDate||'9999')).sort((a,b)=>a.date<b.date?1:-1);
   return sorted.length?sorted[0].kg : DB.settings.prePreg;
@@ -1068,6 +1075,8 @@ function renderBody(){
     <button class="btn sm" id="addWeight" style="margin-top:12px">+ 체중 기록 추가</button>
   </div>
 
+  ${stoolCard()}
+
   <div class="card">
     <h2><span class="e">🧬</span> 인바디 기준${DB.inbody?` (${DB.inbody.date} · 임신 전)`:''}</h2>
     ${DB.inbody?`
@@ -1100,6 +1109,28 @@ function renderBody(){
   el.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=()=>{
     DB.weight=DB.weight.filter(w=>w.date!==b.dataset.wdel); save(); renderBody(); renderHeader();
   });
+  el.querySelectorAll('[data-stool]').forEach(b=>b.onclick=()=>addStool(+b.dataset.stool));
+}
+
+function stoolCard(){
+  const c=getStool(SEL);
+  const isToday = SEL===fmt(new Date());
+  return `<div class="card">
+    <h2><span class="e">🚽</span> 배변 기록<span style="margin-left:auto;font-size:12px;color:var(--sub);font-weight:600">${isToday?'오늘':SEL.slice(5)}</span></h2>
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin:6px 0 12px">
+      <button class="iconbtn" data-stool="-1" ${c<=0?'disabled style="opacity:.4"':''}>−</button>
+      <div style="text-align:center;min-width:80px">
+        <div style="font-size:34px;font-weight:800;letter-spacing:-1px">${c}<small style="font-size:15px;font-weight:600;color:var(--sub)"> 회</small></div>
+        <div class="muted">${c===0?'아직 기록 없어요':'기록됨'}</div>
+      </div>
+      <button class="iconbtn" data-stool="1">＋</button>
+    </div>
+    <div class="chips">
+      <button data-stool="1">🚽 한 번 기록 +1</button>
+      <button data-stool="-1">↩ 되돌리기</button>
+    </div>
+    <div class="note" style="margin-top:12px"><span class="e">💡</span><div>임신 중에는 호르몬 변화와 철분제 영향으로 변비가 흔해요. 물·식이섬유·가벼운 운동이 도움이 됩니다. 3일 이상 배변이 없거나 통증·출혈이 있으면 산부인과에 상담하세요.</div></div>
+  </div>`;
 }
 
 function weightChart(data){
@@ -1753,7 +1784,9 @@ document.getElementById('cfImport').onclick=()=>{
   else alert('불러올 새 항목이 없어요.\n(직접 입력한 기록이 없거나, 이미 모두 "내 음식"에 있어요.)');
 };
 document.getElementById('ocrBtn').onclick=()=>document.getElementById('ocrFile').click();
+document.getElementById('ocrLibBtn').onclick=()=>document.getElementById('ocrFileLib').click();
 document.getElementById('ocrFile').onchange=e=>{ const f=e.target.files[0]; if(f) runVisionOcr(f); e.target.value=''; };
+document.getElementById('ocrFileLib').onchange=e=>{ const f=e.target.files[0]; if(f) runVisionOcr(f); e.target.value=''; };
 document.getElementById('pmCancel').onclick=()=>document.getElementById('portionModal').classList.remove('on');
 document.getElementById('pmAdd').onclick=addPortion;
 document.getElementById('pmQty').oninput=updatePortion;
