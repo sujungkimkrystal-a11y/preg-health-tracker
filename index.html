@@ -1844,6 +1844,19 @@ function initCloud(){
   }).catch(()=>{ updateSyncUI('err'); });
 }
 async function onSignedIn(){ updateSyncUI('syncing'); await pullAndMerge(); renderCloudSettingsIfOpen(); }
+/* 실사용 데이터가 하나도 없는(설정·영양제 기본값만 있는) '빈' 상태인지 판정.
+   빈 상태가 실제 기록을 덮어쓰는 사고를 막기 위한 안전장치의 핵심. */
+function isEmptyDB(db){
+  if(!db||typeof db!=='object') return true;
+  try{
+    const n=o=>(o&&typeof o==='object')?Object.keys(o).length:0;
+    if(db.inbody) return false;
+    if(Array.isArray(db.weight)&&db.weight.length) return false;
+    if(Array.isArray(db.customFoods)&&db.customFoods.length) return false;
+    if(n(db.diet)||n(db.exercise)||n(db.water)||n(db.suppLog)||n(db.stool)) return false;
+    return true; // settings/supplements 기본값만 있음 → 빈 것으로 간주
+  }catch(e){ return false; }
+}
 async function pullAndMerge(){
   if(!sb||!cloudUser) return;
   updateSyncUI('syncing');
@@ -1853,14 +1866,28 @@ async function pullAndMerge(){
     if(!data){ await pushNow(true); return; }
     const remote=data.data||{};
     const remoteAt=remote.updatedAt||0, localAt=DB.updatedAt||0;
+    // 안전장치: 타임스탬프와 무관하게, 빈 값이 실제 데이터를 덮어쓰지 못하게 함
+    if(isEmptyDB(remote) && !isEmptyDB(DB)){
+      // 클라우드가 비었는데 이 기기엔 실제 데이터가 있음 → 로컬로 클라우드를 복구(로컬 유지)
+      DB.updatedAt=Date.now(); saveLocal(); await pushNow(true); updateSyncUI('ok'); return;
+    }
     if(remoteAt>localAt){ DB=applyDefaults(remote); saveLocal(); renderAll(); updateSyncUI('ok'); }
     else if(localAt>remoteAt){ await pushNow(true); }
     else { updateSyncUI('ok'); }
   }catch(e){ console.warn('sync pull',e); updateSyncUI('err'); }
 }
-async function pushNow(){
+async function pushNow(force){
   if(!sb||!cloudUser) return;
   try{
+    // 안전장치: 로컬이 빈 상태면, 올리기 전에 클라우드를 확인해 실제 데이터를 덮어쓰지 않음
+    if(isEmptyDB(DB)){
+      const {data,error}=await sb.from(SYNC_TABLE).select('data').eq('user_id',cloudUser.id).maybeSingle();
+      if(error){ updateSyncUI('err'); return; }           // 확인 실패 시엔 위험하니 올리지 않음
+      if(data && data.data && !isEmptyDB(data.data)){
+        // 클라우드에 실제 데이터가 있음 → 빈 로컬을 올리는 대신 클라우드를 받아옴
+        DB=applyDefaults(data.data); saveLocal(); renderAll(); updateSyncUI('ok'); return;
+      }
+    }
     const {error}=await sb.from(SYNC_TABLE).upsert({user_id:cloudUser.id,data:DB,updated_at:new Date().toISOString()},{onConflict:'user_id'});
     if(error) throw error;
     updateSyncUI('ok');
