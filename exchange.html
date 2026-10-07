@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>식품교환 기록</title>
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="교환단위">
+<meta name="theme-color" content="#6fae8f">
+<style>
+:root{
+  --bg:#faf7f3; --card:#ffffff; --ink:#2f2a26; --sub:#8a8079; --line:#ece5dd; --chip:#f3ede6;
+  --sage:#6fae8f; --sage-d:#4f9273;
+  --good:#57a06f; --warn:#d39a35; --over:#d9748a;
+  --c-grain:#e0a94b; --c-meat:#d9748a; --c-veg:#6fae8f; --c-fat:#8e8bc4; --c-milk:#6c9bc9; --c-fruit:#e8926b;
+  --shadow:0 2px 10px rgba(80,60,40,.06),0 1px 3px rgba(80,60,40,.05);
+  --r:16px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#1c1a18;--card:#26231f;--ink:#efe9e2;--sub:#a89e94;--line:#332e29;--chip:#302b25;--shadow:0 2px 12px rgba(0,0,0,.3)}
+}
+:root[data-theme="dark"]{--bg:#1c1a18;--card:#26231f;--ink:#efe9e2;--sub:#a89e94;--line:#332e29;--chip:#302b25;--shadow:0 2px 12px rgba(0,0,0,.3)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px 96px}
+button{font-family:inherit}
+
+header{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 0 6px;border-bottom:1px solid transparent}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--sage),var(--sage-d));display:grid;place-items:center;font-size:20px;flex:none}
+.brand h1{font-size:17px;margin:0;font-weight:700}
+.brand p{margin:0;font-size:12px;color:var(--sub)}
+.iconbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);height:38px;min-width:38px;padding:0 10px;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;display:grid;place-items:center;text-decoration:none;white-space:nowrap}
+.datebar{display:flex;align-items:center;justify-content:center;gap:8px;margin:10px 0 2px}
+.datebar button{border:1px solid var(--line);background:var(--card);color:var(--ink);width:34px;height:34px;border-radius:10px;font-size:16px;cursor:pointer}
+.datebar .cur{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:7px 14px;font-weight:600;font-size:14px;min-width:160px;text-align:center}
+.datebar .cur input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
+.todaybtn{display:block;margin:0 auto;font-size:12px;color:var(--sage-d);border:none;background:none;padding:4px;cursor:pointer}
+.tabs{display:flex;gap:6px;background:var(--chip);padding:5px;border-radius:14px;margin:8px 0 14px}
+.tabs button{flex:1;border:none;background:none;color:var(--sub);font-size:13px;font-weight:600;padding:9px 4px;border-radius:10px;cursor:pointer}
+.tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 12px;font-weight:700;display:flex;align-items:center;gap:7px}
+.muted{color:var(--sub);font-size:12.5px}
+
+/* verdict */
+.verdict{border-radius:14px;padding:12px 14px;font-size:14px;font-weight:700;margin-bottom:12px}
+.verdict small{display:block;font-weight:500;font-size:12.5px;margin-top:2px;opacity:.9}
+.v-good{background:rgba(87,160,111,.14);color:var(--good)}
+.v-warn{background:rgba(211,154,53,.15);color:var(--warn)}
+.v-over{background:rgba(217,116,138,.14);color:var(--over)}
+.v-idle{background:var(--chip);color:var(--sub)}
+
+/* group rows */
+.grp{display:grid;grid-template-columns:62px 1fr auto;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.grp:last-child{border-bottom:none}
+.grp .nm{font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px}
+.grp .nm i{width:9px;height:9px;border-radius:3px;display:inline-block;flex:none}
+.trk{position:relative;height:12px;background:var(--chip);border-radius:7px;overflow:hidden}
+.trk .f{height:100%;border-radius:7px;transition:width .35s ease}
+.trk .tg{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.35}
+.nums{font-size:12px;color:var(--sub);margin-top:3px;font-variant-numeric:tabular-nums}
+.nums b{color:var(--ink);font-size:13px}
+.badge{font-size:12px;font-weight:700;padding:4px 9px;border-radius:20px;white-space:nowrap}
+.b-good{background:rgba(87,160,111,.15);color:var(--good)}
+.b-warn{background:rgba(211,154,53,.16);color:var(--warn)}
+.b-over{background:rgba(217,116,138,.16);color:var(--over)}
+.b-idle{background:var(--chip);color:var(--sub)}
+
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.tile{background:var(--chip);border-radius:12px;padding:9px 10px}
+.tile .l{font-size:11px;color:var(--sub);font-weight:600}
+.tile .v{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.tile .v small{font-size:11px;color:var(--sub);font-weight:600}
+@media(max-width:480px){.tiles{grid-template-columns:repeat(2,1fr)}}
+
+/* meals */
+.meal{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.meal-hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.meal-hd h3{margin:0;font-size:14.5px}
+.meal-hd .plan{font-size:11.5px;color:var(--sub);margin-top:1px}
+.addbtn{background:var(--sage);color:#fff;border:none;border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.mealsum{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.pill{font-size:11.5px;padding:2px 8px;border-radius:20px;background:var(--chip);color:var(--ink);font-weight:600}
+.pill.alert{background:rgba(217,116,138,.16);color:var(--over)}
+.item{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line);margin-top:7px;font-size:13.5px}
+.item .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.item .t{flex:1;min-width:0}
+.item .t .s{font-size:11.5px;color:var(--sub)}
+.item .u{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.item .x{border:none;background:none;color:var(--sub);font-size:17px;cursor:pointer;padding:2px 4px}
+.mealwarn{font-size:12px;color:var(--over);margin-top:6px;font-weight:600}
+
+/* reference */
+.search{width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-family:inherit}
+.search:focus{outline:none;border-color:var(--sage)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.chips button{border:1px solid var(--line);background:var(--card);color:var(--sub);padding:5px 11px;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer}
+.chips button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11.5px;color:var(--sub);font-weight:600}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.std{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.std div{background:var(--chip);border-radius:12px;padding:8px 10px;font-size:12px}
+.std b{display:block;font-size:13px}
+@media(max-width:480px){.std{grid-template-columns:repeat(2,1fr)}}
+.mark{font-size:10.5px;color:var(--over);margin-left:3px}
+
+/* history */
+.hist td,.hist th{text-align:center;padding:6px 3px}
+.hist td:first-child,.hist th:first-child{text-align:left}
+.hist .cell{font-weight:700;font-size:12px;border-radius:7px;padding:3px 0;display:block}
+.hist tr.clk{cursor:pointer}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(20,15,10,.45);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.modal.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:760px;max-height:88vh;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
+.sheet-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sheet-hd h3{margin:0;font-size:16px}
+.sheet .close{border:none;background:var(--chip);color:var(--ink);width:32px;height:32px;border-radius:10px;font-size:16px;cursor:pointer}
+.flist{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px;min-height:120px}
+.fopt{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.fopt:active{background:var(--chip)}
+.fopt .t{flex:1;min-width:0;font-size:14px}
+.fopt .t .s{font-size:12px;color:var(--sub)}
+.fopt .g{font-size:11px;font-weight:700;padding:2px 7px;border-radius:12px;color:#fff;white-space:nowrap}
+.amt{padding-top:4px}
+.amt .sel{background:var(--chip);border-radius:14px;padding:12px;margin-bottom:12px}
+.amt .sel b{font-size:16px}
+.ubtns{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:8px 0 12px}
+.ubtns button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:9px 0;font-size:14px;font-weight:700;cursor:pointer}
+.ubtns button.on{background:var(--sage);border-color:var(--sage);color:#fff}
+.inrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.inrow label{font-size:12px;color:var(--sub);font-weight:600;display:block;margin-bottom:4px}
+.inrow input,.set input,.set select{width:100%;font-size:15px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-family:inherit}
+.preview{font-size:14px;margin:12px 0;text-align:center}
+.preview b{font-size:20px}
+.btn{width:100%;background:var(--sage);color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer}
+.btn2{width:100%;background:var(--chip);color:var(--ink);border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
+.btn:disabled{opacity:.45}
+
+.set{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.set label{font-size:12px;color:var(--sub);font-weight:600;display:block;margin-bottom:4px}
+@media(max-width:480px){.set{grid-template-columns:repeat(2,1fr)}}
+.note{background:var(--chip);border-radius:12px;padding:11px 12px;font-size:12.5px;color:var(--sub);line-height:1.6}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:.25s;pointer-events:none;z-index:60}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="hd">
+      <div class="brand">
+        <div class="logo">🍚</div>
+        <div>
+          <h1>식품교환 기록</h1>
+          <p>임신성 당뇨 하루 권장 섭취량 체크</p>
+        </div>
+      </div>
+      <a class="iconbtn" href="index.html" title="건강기록으로">← 건강기록</a>
+    </div>
+    <div class="datebar">
+      <button id="prevDay" aria-label="이전 날">‹</button>
+      <div class="cur"><span id="curDate"></span><input type="date" id="datePick" aria-label="날짜 선택"></div>
+      <button id="nextDay" aria-label="다음 날">›</button>
+    </div>
+    <button class="todaybtn" id="goToday">오늘로 이동</button>
+    <div class="tabs">
+      <button data-tab="today" class="on">📝 기록</button>
+      <button data-tab="table">📖 교환표</button>
+      <button data-tab="hist">📅 모아보기</button>
+      <button data-tab="set">⚙️ 설정</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="tab-today">
+      <div class="card" id="summaryCard"></div>
+      <div class="card">
+        <h2>🍽️ 끼니별 기록</h2>
+        <div id="meals"></div>
+        <p class="muted" style="margin:6px 0 0">국물·절인 식품·짠 음식은 적게, 식물성 기름은 적당히, 튀김·기름진 음식은 줄이기.</p>
+      </div>
+    </section>
+
+    <section id="tab-table" hidden>
+      <div class="card">
+        <h2>📏 식품군별 1교환단위 영양소</h2>
+        <div class="std" id="stdBox"></div>
+        <p class="muted" style="margin:10px 0 0">같은 식품군 안에서는 1교환단위끼리 바꿔 먹을 수 있어요. 예) 밥 70g(1/3공기) = 식빵 35g(1쪽)</p>
+      </div>
+      <div class="card">
+        <input class="search" id="refSearch" placeholder="음식 이름 검색 (예: 고구마, 두부, 사과)">
+        <div class="chips" id="refChips"></div>
+        <table>
+          <thead><tr><th>식품명</th><th style="text-align:right">1교환</th><th>목측량</th></tr></thead>
+          <tbody id="refBody"></tbody>
+        </table>
+        <p class="muted" style="margin:10px 0 0"><span class="mark">♣</span> 콜레스테롤이 많은 식품 · <span class="mark">◆</span> 포화지방산이 많은 식품<br>공기=밥그릇(소), 컵=200ml, 1큰술=15ml<br>출처: 이대목동병원 식품교환표 (대한당뇨병학회, 당뇨병 식사계획을 위한 식품교환표 활용지침, 2024)</p>
+      </div>
+    </section>
+
+    <section id="tab-hist" hidden>
+      <div class="card">
+        <h2>📅 최근 14일</h2>
+        <div style="overflow-x:auto"><table class="hist" id="histTable"></table></div>
+        <p class="muted" style="margin:10px 0 0">칸 숫자 = 먹은 교환단위 · 🟢 적정 🟡 부족 🔴 초과 · 날짜를 누르면 그날 기록으로 이동</p>
+      </div>
+      <div class="card" id="weekCard"></div>
+    </section>
+
+    <section id="tab-set" hidden>
+      <div class="card">
+        <h2>🎯 하루 권장 교환단위</h2>
+        <div class="set" id="targetSet"></div>
+        <p class="muted" style="margin:10px 0 0">병원에서 받은 처방 기준(곡류 6.5 · 어육류 6 · 채소 8 · 과일 2 · 우유 2 · 지방 6)이 기본값이에요. 처방이 바뀌면 여기서 고쳐 주세요.</p>
+        <button class="btn2" id="resetTargets">처방 기본값으로 되돌리기</button>
+      </div>
+      <div class="card">
+        <h2>🍱 끼니별 곡류·어육류 계획</h2>
+        <div id="mealPlanSet"></div>
+      </div>
+      <div class="card">
+        <h2>💾 백업</h2>
+        <p class="muted" style="margin:0 0 8px">기록은 이 기기의 브라우저에 저장돼요. 폰을 바꾸거나 브라우저 데이터를 지우기 전에 백업 파일을 받아 두세요.</p>
+        <button class="btn" id="exportBtn">백업 파일 저장</button>
+        <button class="btn2" id="importBtn">백업 파일 불러오기</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="addModal">
+  <div class="sheet">
+    <div class="sheet-hd"><h3 id="addTitle">음식 추가</h3><button class="close" id="addClose" aria-label="닫기">✕</button></div>
+    <div id="pickStep" style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <input class="search" id="addSearch" placeholder="음식 검색 (예: 현미밥, 달걀, 방울토마토)">
+      <div class="chips" id="addChips"></div>
+      <div class="flist" id="addList"></div>
+    </div>
+    <div id="amtStep" class="amt" hidden>
+      <div class="sel" id="amtSel"></div>
+      <div class="muted" style="font-weight:600">몇 교환단위 먹었나요?</div>
+      <div class="ubtns" id="ubtns"></div>
+      <div class="inrow">
+        <div><label for="inUnits">교환단위</label><input type="number" id="inUnits" step="0.1" min="0" inputmode="decimal"></div>
+        <div><label for="inGrams">무게 (g)</label><input type="number" id="inGrams" step="1" min="0" inputmode="decimal"></div>
+      </div>
+      <div class="preview" id="amtPreview"></div>
+      <button class="btn" id="amtOk">추가하기</button>
+      <button class="btn2" id="amtBack">← 다른 음식 고르기</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- 식품군 기준 (1교환단위) ---------- */
+const SUB = {
+  grain:  {grp:'grain', label:'곡류군',          kcal:100, c:23, p:2, f:0},
+  meat_l: {grp:'meat',  label:'어육류 저지방',   kcal:50,  c:0,  p:8, f:2},
+  meat_m: {grp:'meat',  label:'어육류 중지방',   kcal:75,  c:0,  p:8, f:5},
+  meat_h: {grp:'meat',  label:'어육류 고지방',   kcal:100, c:0,  p:8, f:8},
+  veg:    {grp:'veg',   label:'채소군',          kcal:20,  c:3,  p:2, f:0},
+  fat:    {grp:'fat',   label:'지방군',          kcal:45,  c:0,  p:0, f:5},
+  milk_w: {grp:'milk',  label:'우유 일반',       kcal:125, c:10, p:6, f:7},
+  milk_l: {grp:'milk',  label:'우유 저지방',     kcal:80,  c:10, p:6, f:2},
+  fruit:  {grp:'fruit', label:'과일군',          kcal:50,  c:12, p:0, f:0},
+};
+const GROUPS = [
+  {k:'grain', n:'곡류',   color:'var(--c-grain)', carb:true},
+  {k:'meat',  n:'어육류', color:'var(--c-meat)'},
+  {k:'veg',   n:'채소',   color:'var(--c-veg)', moreOk:true},
+  {k:'fruit', n:'과일',   color:'var(--c-fruit)', carb:true},
+  {k:'milk',  n:'우유',   color:'var(--c-milk)', carb:true},
+  {k:'fat',   n:'지방',   color:'var(--c-fat)'},
+];
+const GMAP = Object.fromEntries(GROUPS.map(g=>[g.k,g]));
+const DEFAULT_TARGETS = {grain:6.5, meat:6, veg:8, fruit:2, milk:2, fat:6};
+
+/* ---------- 식품교환표 (무게 g = 1교환단위) ---------- */
+// [sub, 식품명, g, 목측량, 표시]
+const RAW = [
+ // 곡류군
+ ['grain','쌀밥·보리밥·현미밥',70,'1/3공기(소)'],['grain','잡곡밥',70,'1/3공기(소)'],['grain','쌀죽',140,'2/3공기(소)'],
+ ['grain','백미·보리 (생쌀)',30,'3큰술 (=1/5쌀컵)'],['grain','찰수수·차조·찹쌀·팥',30,'3큰술'],['grain','기장',30,''],['grain','녹두',30,'3큰술'],
+ ['grain','미숫가루',30,'1/4컵(소)'],['grain','밀가루',30,'5큰술'],['grain','완두콩',70,'1/2컵(소)'],
+ ['grain','국수 (삶은 것)',90,'1/2공기(소)'],['grain','국수 (건조)',30,''],['grain','당면 (건조)',30,''],
+ ['grain','메밀국수·메밀냉면 (건조)',30,''],['grain','메밀국수 (생것)',40,''],['grain','스파게티·쌀국수·쫄면 (건조)',30,''],
+ ['grain','스파게티·쌀국수 (삶은 것)',90,''],['grain','우동 (생면)',70,''],['grain','칼국수 (생면)',40,''],
+ ['grain','감자',140,'중 1개'],['grain','고구마·옥수수 (생것)',70,'중 1/2개'],['grain','돼지감자·토란',140,''],['grain','마',140,''],
+ ['grain','가래떡',50,'썬 것 11~12개'],['grain','떡볶이떡',50,'5개'],['grain','백설기·시루떡',50,''],['grain','송편 (깨)',50,'2개'],
+ ['grain','인절미',50,'3개'],['grain','절편',50,'1개 (5.5×5×1.5cm)'],
+ ['grain','식빵',35,'1쪽 (11×10×1cm)'],['grain','모닝빵',35,'중 1+1/3개'],['grain','바게트빵',35,'중 2쪽'],['grain','호밀빵',35,''],['grain','베이글',35,''],
+ ['grain','도토리묵·녹두묵·메밀묵',200,'1/2모 (6×7×4.5cm)'],['grain','강냉이 (옥수수)',25,'1.5공기(소)'],['grain','뻥튀기',25,'3개'],
+ ['grain','건빵',25,'13개'],['grain','누룽지 (건조)',30,'지름 11.5cm'],['grain','밤',60,'대 3개'],['grain','오트밀',30,''],
+ ['grain','은행',60,'1/3컵(소)'],['grain','시리얼',25,'2/3컵(소)'],['grain','크래커',25,'7개'],
+ // 어육류 저지방
+ ['meat_l','닭고기 (가슴살)',40,'소 1토막 (탁구공 크기)'],['meat_l','닭부산물 (모래주머니)',40,'','♣'],['meat_l','돼지고기 (안심)',40,''],
+ ['meat_l','소 간',40,'','♣'],['meat_l','쇠고기 (사태·홍두깨 등)',40,'로스용 1장 (12×10.3cm)'],['meat_l','오리고기',40,''],['meat_l','육포',15,'1장 (9×6cm)'],
+ ['meat_l','가자미·광어·대구·동태·삼치',50,'소 1토막'],['meat_l','미꾸라지',50,'소 1토막'],['meat_l','병어·북어·아귀·연어·옥돔(반건조)',50,'소 1토막'],
+ ['meat_l','조기·도미·한치·홍어·민어·방어',50,'소 1토막'],['meat_l','코다리 (건조)',15,''],['meat_l','건오징어채·오징어 (건조)',15,'','♣'],
+ ['meat_l','게맛살',50,''],['meat_l','굴비',15,'1/2토막'],['meat_l','멸치',15,'잔 것 1/4컵(소)','♣'],['meat_l','뱅어포',15,'1장'],
+ ['meat_l','북어채',15,'','♣'],['meat_l','어묵 (찐 것)',50,'1/3개 (5.5cm)'],['meat_l','어리굴젓·명란젓·창란젓',40,'','♣'],['meat_l','개불',70,''],
+ ['meat_l','굴·멍게',70,'1/3컵(소)'],['meat_l','꼬막조개',70,''],['meat_l','꽃게',70,'소 1마리'],['meat_l','낙지',100,'중 1마리 (=1/2컵)'],
+ ['meat_l','날치알',50,''],['meat_l','문어',70,'1/3컵(소)','♣'],['meat_l','물오징어',50,'몸통 1/3등분','♣'],['meat_l','미더덕',100,'3/4컵(소)'],
+ ['meat_l','새우 (대하)',50,'','♣'],['meat_l','새우 (깐새우)',50,'1/4컵, 소 6마리','♣'],['meat_l','새우 (중하)',50,'3마리','♣'],
+ ['meat_l','전복',70,'중 1개','♣'],['meat_l','조갯살·홍합살',70,'1/3컵(소)'],['meat_l','해삼',200,'1+1/3컵'],
+ // 어육류 중지방
+ ['meat_m','달걀',55,'중 1개','♣'],['meat_m','메추리알',55,'6개','♣'],['meat_m','두부',80,'1/4모 (300g 포장)'],['meat_m','순두부',200,'1/2봉'],
+ ['meat_m','연두부',150,''],['meat_m','두부면',50,''],['meat_m','콩비지',100,''],['meat_m','검정콩·대두 (노란콩)',20,'2큰술'],['meat_m','낫또',40,'작은 포장 1개'],
+ ['meat_m','닭고기 (껍질 포함)',40,'닭다리 1개'],['meat_m','돼지고기',40,''],['meat_m','쇠고기 (등심)·소고기 (양지)',40,'','◆'],
+ ['meat_m','소곱창·돼지곱창',40,'','♣◆'],['meat_m','햄 (로스)',40,'2장 (8×6×0.8cm)'],['meat_m','런천미트',40,'1장 (9×4.5×0.7cm)'],
+ ['meat_m','훈제오리 (껍질 제거)',40,''],['meat_m','갈치·고등어·꽁치·참치',50,'소 1토막'],['meat_m','고등어통조림',50,''],
+ ['meat_m','임연수어',50,'소 1토막'],['meat_m','장어',50,'소 1토막','♣'],['meat_m','훈제연어',50,''],['meat_m','어묵 (튀긴 것)',50,'1장 (18×10.5cm)'],
+ ['meat_m','리코타·모짜렐라·피자치즈',30,'','◆'],
+ // 어육류 고지방
+ ['meat_h','삼겹살',40,'','◆'],['meat_h','돼지갈비',40,''],['meat_h','소갈비·소꼬리',40,'소 1토막','◆'],['meat_h','양고기',40,'','◆'],
+ ['meat_h','돼지막창·돼지대창',40,'','♣◆'],['meat_h','돼지족발·돼지머리',40,'','◆'],['meat_h','베이컨',40,'1+1/4장','◆'],
+ ['meat_h','비엔나소시지',40,'5개','◆'],['meat_h','꽁치통조림·참치통조림',50,'1/3컵(소)'],['meat_h','청어',50,'소 1토막'],
+ ['meat_h','유부',30,'5장 (초밥용)'],['meat_h','체다치즈',30,'1.5장'],['meat_h','파마산치즈',30,'1/3컵'],
+ // 채소군
+ ['veg','가지',70,'지름 3cm × 길이 10cm'],['veg','고사리 (삶은 것)',70,'1/3컵'],['veg','근대·미나리·부추',70,'익혀서 1/3컵'],['veg','깻잎',40,'20장'],
+ ['veg','늙은호박 (생것)',70,'4×4×6cm'],['veg','단무지',20,''],['veg','단호박',40,'1/10개 (지름 10cm)'],['veg','달래',70,''],
+ ['veg','당근',70,'4×5cm 또는 대 1/3개'],['veg','대파·더덕·도라지',40,''],['veg','돌나물·두릅',70,''],['veg','마늘',15,'4쪽'],
+ ['veg','마늘쫑',40,'3개 (6.5~7cm)'],['veg','무',70,'지름 8cm × 길이 1.5cm'],['veg','무말랭이',7,'불려서 1/3컵'],
+ ['veg','배추',70,'알배기 15×6cm, 중 3잎'],['veg','붉은 양배추',70,'1/5개 (9×4×6cm)'],['veg','브로콜리',70,''],['veg','상추',70,'소 12장'],
+ ['veg','셀러리',70,'길이 6cm × 6개'],['veg','숙주·시금치·쑥갓',70,'익혀서 1/3컵'],['veg','애호박',70,'중 1/3개'],['veg','양배추·양상추·양파',70,''],
+ ['veg','연근',40,'썬 것 5쪽'],['veg','오이',70,'중 1/3개'],['veg','우엉',40,''],['veg','콩나물',70,'익혀서 2/5컵'],['veg','파프리카',70,'대 1개'],
+ ['veg','풋고추',70,'중 7~8개'],['veg','풋마늘',70,''],['veg','피망',70,'대 1개'],['veg','미역 (생것)·우뭇가사리',70,''],['veg','김',2,'1장'],
+ ['veg','매생이',20,''],['veg','느타리버섯',50,'7개 (8cm)'],['veg','송이버섯',50,'소 2개'],['veg','양송이버섯',50,'3개 (지름 4.5cm)'],
+ ['veg','표고버섯',50,'대 3개'],['veg','깍두기',50,'사방 1.5cm 10개'],['veg','나박김치',70,''],['veg','배추김치',50,'6~7개 (4.5cm)'],
+ ['veg','총각김치',50,'2개'],['veg','당근주스',50,'1/4컵(소)'],
+ // 지방군
+ ['fat','들기름·참기름·콩기름·카놀라유',5,'1작은술'],['fat','깨 (건조)',8,'1큰술'],['fat','땅콩',8,'8개'],['fat','아몬드',8,'8개'],
+ ['fat','잣',8,'50알 (1큰술)'],['fat','캐슈넛 (조미)',8,'5개'],['fat','피스타치오',8,'12개'],['fat','해바라기씨·호박씨',8,'1큰술'],
+ ['fat','호두',8,'중 1.5개'],['fat','땅콩버터',8,''],['fat','버터',5,'1작은술','◆'],['fat','마요네즈',8,''],['fat','라이트마요네즈',15,'1큰술'],
+ ['fat','사우전드·프렌치드레싱',15,'3작은술'],['fat','아보카도',30,''],['fat','올리브 (절임)',30,'7개'],['fat','코코넛밀크',20,'','◆'],['fat','크림치즈',15,'1큰술','◆'],
+ // 우유군
+ ['milk_w','두유 (무가당)',200,'1컵 (1팩)'],['milk_w','일반우유·산양유',200,'1컵 (1팩)','◆'],['milk_w','전지분유·조제분유',25,'1/4컵','◆'],
+ ['milk_w','그릭요구르트',100,'1/2컵','◆'],['milk_l','저지방우유',200,'1컵 (1팩)'],['milk_l','떠먹는 요구르트 (플레인)',100,'1/2컵','◆'],
+ ['milk_l','액상요구르트 (농후, 플레인)',100,'1/2컵'],['milk_l','탈지분유',25,''],
+ // 과일군
+ ['fruit','사과 (부사)',100,'중 1/2개'],['fruit','바나나',80,'중 2/3개'],['fruit','배',100,'대 1/5개'],['fruit','오렌지',100,'대 1/2개'],
+ ['fruit','귤',100,'대 1개'],['fruit','금귤',50,'6개'],['fruit','자몽',150,'중 1/2개'],['fruit','단감',80,'대 1/3개'],['fruit','곶감',15,'소 1/2개'],
+ ['fruit','토마토',250,'대 1개'],['fruit','방울토마토',200,'중 15개'],['fruit','딸기',150,'중 7개'],['fruit','블루베리',100,''],
+ ['fruit','복숭아 (백도/황도)',100,'대 1/2개'],['fruit','복숭아 (천도)',150,'소 2개'],['fruit','수박',150,'중 1쪽'],['fruit','자두',100,'대 1개'],
+ ['fruit','참외',100,'대 1/2개'],['fruit','멜론 (머스크)',150,'1/10개'],['fruit','키위',80,'중 1개'],['fruit','파인애플',100,''],
+ ['fruit','포도',80,'소 19알'],['fruit','포도 (거봉)',80,'9알'],['fruit','포도 (샤인머스켓)',80,'5알'],['fruit','체리',80,'8알'],
+ ['fruit','리치',80,'5알'],['fruit','망고',80,'1/2개'],['fruit','무화과',80,'1개'],['fruit','건조과일 (무화과·바나나·포도·대추)',15,''],
+ ['fruit','과일주스 (배/사과/오렌지/토마토/포도)',100,'1/2컵(소)'],
+];
+const FOODS = RAW.map((r,i)=>({id:'f'+i, sub:r[0], n:r[1], w:r[2], m:r[3]||'', mk:r[4]||''}));
+// 직접 입력용 (무게 모를 때)
+const GENERIC = [
+  {id:'g_grain',sub:'grain',n:'곡류 (직접 입력)',w:0,m:''},{id:'g_meat_l',sub:'meat_l',n:'어육류 저지방 (직접 입력)',w:0,m:''},
+  {id:'g_meat_m',sub:'meat_m',n:'어육류 중지방 (직접 입력)',w:0,m:''},{id:'g_meat_h',sub:'meat_h',n:'어육류 고지방 (직접 입력)',w:0,m:''},
+  {id:'g_veg',sub:'veg',n:'채소 (직접 입력)',w:0,m:''},{id:'g_fruit',sub:'fruit',n:'과일 (직접 입력)',w:0,m:''},
+  {id:'g_milk_w',sub:'milk_w',n:'우유 일반 (직접 입력)',w:0,m:''},{id:'g_milk_l',sub:'milk_l',n:'우유 저지방 (직접 입력)',w:0,m:''},
+  {id:'g_fat',sub:'fat',n:'지방 (직접 입력)',w:0,m:''},
+];
+const ALLFOODS = FOODS.concat(GENERIC);
+const FBYID = Object.fromEntries(ALLFOODS.map(f=>[f.id,f]));
+
+/* ---------- 끼니 + 병원 식단 계획 ---------- */
+const MEALS = [
+  {k:'b',  n:'아침',     e:'🌅'},
+  {k:'s1', n:'오전 간식', e:'🍎'},
+  {k:'l',  n:'점심',     e:'☀️'},
+  {k:'s2', n:'오후 간식', e:'🥛'},
+  {k:'d',  n:'저녁',     e:'🌙'},
+  {k:'s3', n:'밤 간식',   e:'🌛'},
+];
+const DEFAULT_MEALPLAN = {
+  b:{grain:1.5, meat:2}, l:{grain:2, meat:2}, d:{grain:3, meat:2},
+};
+const MEAL_HINT = {
+  b:'채소 충분히', l:'채소 충분히', d:'채소 충분히',
+  s1:'과일 1', s2:'과일 1 · 우유 1 · 견과류', s3:'우유 1',
+};
+
+/* ---------- 저장 ---------- */
+const KEY = 'gdm_exchange_v1';
+function load(){
+  let d=null;
+  try{ d=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){}
+  d = d && typeof d==='object' ? d : {};
+  d.targets = Object.assign({}, DEFAULT_TARGETS, d.targets||{});
+  d.mealPlan = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_MEALPLAN)), d.mealPlan||{});
+  d.days = d.days||{};
+  d.recent = d.recent||[];
+  return d;
+}
+let DB = load();
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){ toast('저장 실패: 브라우저 저장공간을 확인해 주세요'); } }
+
+/* ---------- 유틸 ---------- */
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const r1 = x=>Math.round(x*10)/10;
+const fmt = x=>{ const v=r1(x); return Number.isInteger(v)? String(v) : v.toFixed(1); };
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function parseYmd(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function addDays(s,n){ const d=parseYmd(s); d.setDate(d.getDate()+n); return ymd(d); }
+const WD = ['일','월','화','수','목','금','토'];
+function pretty(s){ const d=parseYmd(s); return `${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})`; }
+let toastT; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1800); }
+
+let CUR = ymd(new Date());
+const dayItems = s => DB.days[s] || [];
+
+function totals(items){
+  const g = {grain:0,meat:0,veg:0,fruit:0,milk:0,fat:0}; const n={kcal:0,c:0,p:0,f:0};
+  for(const it of items){
+    const s = SUB[it.sub]; if(!s) continue;
+    g[s.grp] += it.u;
+    n.kcal += s.kcal*it.u; n.c += s.c*it.u; n.p += s.p*it.u; n.f += s.f*it.u;
+  }
+  return {g,n};
+}
+
+// 적정 판정: 목표 ±0.5 (지방은 ±1). 채소는 많이 먹어도 OK.
+function judge(gk, eaten, target){
+  const tol = gk==='fat' ? 1 : 0.5;
+  if(eaten<=0) return {cls:'idle', txt:'아직', fill:'var(--line)'};
+  if(eaten < target - tol) return {cls:'warn', txt:`${fmt(target-eaten)} 부족`, fill:'var(--warn)'};
+  if(eaten > target + tol){
+    if(GMAP[gk].moreOk) return {cls:'good', txt:'충분 👍', fill:'var(--good)'};
+    return {cls:'over', txt:`${fmt(eaten-target)} 초과`, fill:'var(--over)'};
+  }
+  return {cls:'good', txt:'적정 ✓', fill:'var(--good)'};
+}
+
+/* ---------- 렌더: 오늘 ---------- */
+function renderSummary(){
+  const items = dayItems(CUR);
+  const {g,n} = totals(items);
+  const T = DB.targets;
+  const js = GROUPS.map(gr=>({gr, j:judge(gr.k,g[gr.k],T[gr.k])}));
+  const over = js.filter(x=>x.j.cls==='over'), lack = js.filter(x=>x.j.cls==='warn');
+  const isToday = CUR===ymd(new Date());
+  let v;
+  if(!items.length) v = `<div class="verdict v-idle">아직 기록이 없어요<small>끼니별 ‘+ 추가’를 눌러 먹은 음식을 기록해 보세요.</small></div>`;
+  else if(over.some(x=>x.gr.carb)) v = `<div class="verdict v-over">⚠️ ${over.filter(x=>x.gr.carb).map(x=>x.gr.n).join('·')} 초과 — 혈당 주의<small>남은 끼니에서는 ${over.filter(x=>x.gr.carb).map(x=>x.gr.n).join('·')}을(를) 줄여 주세요.</small></div>`;
+  else if(over.length) v = `<div class="verdict v-over">${over.map(x=>x.gr.n).join('·')} 조금 많아요<small>다른 식품군은 계획대로 맞춰 보세요.</small></div>`;
+  else if(!lack.length) v = `<div class="verdict v-good">🎉 오늘 식단 계획을 잘 지켰어요!<small>모든 식품군이 권장량 범위 안이에요.</small></div>`;
+  else v = `<div class="verdict v-warn">${isToday?'남은 양':'부족했던 양'}: ${lack.map(x=>`${x.gr.n} ${x.j.txt.replace(' 부족','')}`).join(' · ')}<small>${isToday?'초과 없이 잘 가고 있어요. 남은 끼니에서 채워 주세요.':'다음엔 부족한 식품군을 조금 더 챙겨 주세요.'}</small></div>`;
+
+  const rows = js.map(({gr,j})=>{
+    const t=T[gr.k], e=g[gr.k], max=Math.max(t*1.4, e, 0.5);
+    return `<div class="grp">
+      <div class="nm"><i style="background:${gr.color}"></i>${gr.n}</div>
+      <div><div class="trk"><div class="f" style="width:${Math.min(100,e/max*100)}%;background:${j.fill}"></div><div class="tg" style="left:${t/max*100}%"></div></div>
+        <div class="nums"><b>${fmt(e)}</b> / ${fmt(t)} 교환</div></div>
+      <span class="badge b-${j.cls}">${j.txt}</span></div>`;
+  }).join('');
+
+  const planC = T.grain*23 + T.veg*3 + T.fruit*12 + T.milk*10;
+  $('#summaryCard').innerHTML = `<h2>📊 ${pretty(CUR)} 합계</h2>${v}${rows}
+    <div class="tiles">
+      <div class="tile"><div class="l">열량</div><div class="v">${Math.round(n.kcal)}<small> kcal</small></div></div>
+      <div class="tile"><div class="l">당질</div><div class="v">${Math.round(n.c)}<small> / ${Math.round(planC)}g</small></div></div>
+      <div class="tile"><div class="l">단백질</div><div class="v">${Math.round(n.p)}<small> g</small></div></div>
+      <div class="tile"><div class="l">지방</div><div class="v">${Math.round(n.f)}<small> g</small></div></div>
+    </div>
+    <p class="muted" style="margin:8px 0 0">세로선 = 권장량 · 적정 범위는 권장량 ±0.5 (지방 ±1). 채소는 넉넉히 먹어도 좋아요.</p>`;
+}
+
+function renderMeals(){
+  const items = dayItems(CUR);
+  $('#meals').innerHTML = MEALS.map(m=>{
+    const its = items.filter(i=>i.meal===m.k);
+    const {g} = totals(its);
+    const plan = DB.mealPlan[m.k];
+    const planTxt = plan ? `곡류 ${fmt(plan.grain)} · 어육류 ${fmt(plan.meat)} · ${MEAL_HINT[m.k]}` : MEAL_HINT[m.k];
+    const pills = GROUPS.filter(gr=>g[gr.k]>0).map(gr=>{
+      const alert = plan && plan[gr.k]!=null && g[gr.k] > plan[gr.k] + 0.5;
+      return `<span class="pill${alert?' alert':''}">${gr.n} ${fmt(g[gr.k])}${plan&&plan[gr.k]!=null?` / ${fmt(plan[gr.k])}`:''}</span>`;
+    }).join('');
+    let warn='';
+    if(plan && g.grain > plan.grain + 0.5) warn = `<div class="mealwarn">이 끼니 곡류가 계획보다 ${fmt(g.grain-plan.grain)} 많아요 — 식후 혈당 체크해 보세요.</div>`;
+    const list = its.map(it=>{
+      const s=SUB[it.sub];
+      return `<div class="item"><span class="dot" style="background:${GMAP[s.grp].color}"></span>
+        <div class="t">${esc(it.name)}<div class="s">${s.label}${it.g?` · ${fmt(it.g)}g`:''}</div></div>
+        <span class="u">${fmt(it.u)}</span>
+        <button class="x" data-del="${it.id}" aria-label="삭제">✕</button></div>`;
+    }).join('');
+    return `<div class="meal">
+      <div class="meal-hd"><div><h3>${m.e} ${m.n}</h3><div class="plan">계획: ${planTxt}</div></div>
+      <button class="addbtn" data-add="${m.k}">+ 추가</button></div>
+      ${pills?`<div class="mealsum">${pills}</div>`:''}${warn}${list}</div>`;
+  }).join('');
+}
+
+function renderToday(){ renderSummary(); renderMeals(); }
+
+$('#meals').addEventListener('click',e=>{
+  const a=e.target.closest('[data-add]'); if(a){ openAdd(a.dataset.add); return; }
+  const d=e.target.closest('[data-del]');
+  if(d){
+    const arr=dayItems(CUR); const i=arr.findIndex(x=>x.id===d.dataset.del);
+    if(i>=0){ const [rm]=arr.splice(i,1); if(!arr.length) delete DB.days[CUR]; save(); renderToday(); renderHist(); toast(`${rm.name} 삭제됨`); }
+  }
+});
+
+/* ---------- 추가 모달 ---------- */
+let addMeal=null, addFood=null, addGroup='recent';
+const PICK_CHIPS = [{k:'recent',n:'최근'},...GROUPS.map(g=>({k:g.k,n:g.n})),{k:'generic',n:'직접 입력'}];
+function openAdd(meal){
+  addMeal=meal; addFood=null;
+  const m=MEALS.find(x=>x.k===meal);
+  $('#addTitle').textContent = `${m.e} ${m.n}에 추가`;
+  $('#addSearch').value='';
+  addGroup = DB.recent.length ? 'recent' : (meal.startsWith('s') ? 'fruit' : 'grain');
+  showPick(); $('#addModal').classList.add('open');
+}
+function closeAdd(){ $('#addModal').classList.remove('open'); }
+function showPick(){ $('#pickStep').style.display='flex'; $('#amtStep').hidden=true; renderPick(); }
+function renderPick(){
+  $('#addChips').innerHTML = PICK_CHIPS.map(c=>`<button data-c="${c.k}" class="${c.k===addGroup?'on':''}">${c.n}</button>`).join('');
+  const q=$('#addSearch').value.trim();
+  let list;
+  if(q) list = ALLFOODS.filter(f=>f.n.replace(/\s/g,'').includes(q.replace(/\s/g,'')));
+  else if(addGroup==='recent') list = DB.recent.map(id=>FBYID[id]).filter(Boolean);
+  else if(addGroup==='generic') list = GENERIC;
+  else list = ALLFOODS.filter(f=>SUB[f.sub].grp===addGroup && !f.id.startsWith('g_')).concat(GENERIC.filter(f=>SUB[f.sub].grp===addGroup));
+  $('#addList').innerHTML = list.length ? list.map(f=>{
+    const s=SUB[f.sub];
+    return `<div class="fopt" data-f="${f.id}"><div class="t">${esc(f.n)}${f.mk?`<span class="mark">${f.mk}</span>`:''}
+      <div class="s">${f.w?`1교환 = ${f.w}g${f.m?' · '+esc(f.m):''}`:'무게 없이 교환단위만 입력'}</div></div>
+      <span class="g" style="background:${GMAP[s.grp].color}">${s.label.replace('군','')}</span></div>`;
+  }).join('') : `<p class="muted" style="text-align:center;padding:20px 0">${addGroup==='recent'&&!q?'최근 기록한 음식이 없어요. 위에서 식품군을 골라 보세요.':'검색 결과가 없어요. ‘직접 입력’으로 교환단위만 기록할 수 있어요.'}</p>`;
+}
+$('#addChips').addEventListener('click',e=>{ const b=e.target.closest('[data-c]'); if(!b) return; addGroup=b.dataset.c; $('#addSearch').value=''; renderPick(); });
+$('#addSearch').addEventListener('input',renderPick);
+$('#addList').addEventListener('click',e=>{ const o=e.target.closest('[data-f]'); if(o) showAmt(FBYID[o.dataset.f]); });
+$('#addClose').addEventListener('click',closeAdd);
+$('#addModal').addEventListener('click',e=>{ if(e.target.id==='addModal') closeAdd(); });
+$('#amtBack').addEventListener('click',showPick);
+
+const UNIT_PRESETS=[0.5,1,1.5,2,2.5,3];
+function showAmt(f){
+  addFood=f; $('#pickStep').style.display='none'; $('#amtStep').hidden=false;
+  const s=SUB[f.sub];
+  $('#amtSel').innerHTML = `<b>${esc(f.n)}</b> <span class="muted">· ${s.label}</span><div class="muted" style="margin-top:3px">${f.w?`1교환단위 = <b style="font-size:13px;color:var(--ink)">${f.w}g</b>${f.m?` (${esc(f.m)})`:''}`:'교환단위를 직접 입력하세요'} · ${s.kcal}kcal, 당질 ${s.c}g</div>`;
+  $('#ubtns').innerHTML = UNIT_PRESETS.map(u=>`<button data-u="${u}">${u}</button>`).join('');
+  $('#inGrams').disabled = !f.w; $('#inGrams').placeholder = f.w ? '' : '—';
+  setUnits(1);
+}
+function setUnits(u, from){
+  if(from!=='u') $('#inUnits').value = u ? r1(u) : '';
+  if(from!=='g') $('#inGrams').value = addFood.w && u ? Math.round(u*addFood.w) : '';
+  document.querySelectorAll('#ubtns button').forEach(b=>b.classList.toggle('on', Number(b.dataset.u)===r1(u)));
+  const s=SUB[addFood.sub];
+  $('#amtPreview').innerHTML = u>0 ? `<b>${fmt(u)}</b> 교환 · ${Math.round(s.kcal*u)}kcal · 당질 ${Math.round(s.c*u)}g` : '<span class="muted">양을 입력하세요</span>';
+  $('#amtOk').disabled = !(u>0);
+}
+$('#ubtns').addEventListener('click',e=>{ const b=e.target.closest('[data-u]'); if(b) setUnits(Number(b.dataset.u)); });
+$('#inUnits').addEventListener('input',e=>setUnits(Number(e.target.value)||0,'u'));
+$('#inGrams').addEventListener('input',e=>{ const g=Number(e.target.value)||0; setUnits(addFood.w? g/addFood.w : 0,'g'); });
+$('#amtOk').addEventListener('click',()=>{
+  const u = Number($('#inUnits').value)||0; if(!(u>0)) return;
+  const g = addFood.w ? Number($('#inGrams').value)||Math.round(u*addFood.w) : 0;
+  (DB.days[CUR] ||= []).push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), meal:addMeal, fid:addFood.id, sub:addFood.sub, name:addFood.n, u:Math.round(u*100)/100, g});
+  DB.recent = [addFood.id, ...DB.recent.filter(x=>x!==addFood.id)].slice(0,20);
+  save(); closeAdd(); renderToday(); renderHist(); toast(`${addFood.n} ${fmt(u)}교환 추가`);
+});
+
+/* ---------- 교환표 ---------- */
+let refGroup='all';
+function renderStd(){
+  $('#stdBox').innerHTML = Object.values(SUB).map(s=>`<div><b>${s.label}</b>${s.kcal}kcal · 당${s.c} 단${s.p} 지${s.f}g</div>`).join('');
+}
+function renderRef(){
+  const chips=[{k:'all',n:'전체'},...GROUPS.map(g=>({k:g.k,n:g.n}))];
+  $('#refChips').innerHTML = chips.map(c=>`<button data-c="${c.k}" class="${c.k===refGroup?'on':''}">${c.n}</button>`).join('');
+  const q=$('#refSearch').value.trim().replace(/\s/g,'');
+  const list = FOODS.filter(f=>(refGroup==='all'||SUB[f.sub].grp===refGroup) && (!q||f.n.replace(/\s/g,'').includes(q)));
+  let last='';
+  $('#refBody').innerHTML = list.map(f=>{
+    let hdr='';
+    if(f.sub!==last){ last=f.sub; const s=SUB[f.sub]; hdr=`<tr><td colspan="3" style="background:var(--chip);font-weight:700;font-size:12px"><span style="color:${GMAP[s.grp].color}">●</span> ${s.label} — ${s.kcal}kcal, 당질 ${s.c}g, 단백질 ${s.p}g, 지방 ${s.f}g</td></tr>`; }
+    return hdr+`<tr><td>${esc(f.n)}${f.mk?`<span class="mark">${f.mk}</span>`:''}</td><td class="num">${f.w}g</td><td class="muted">${esc(f.m)}</td></tr>`;
+  }).join('') || `<tr><td colspan="3" class="muted" style="text-align:center">검색 결과가 없어요</td></tr>`;
+}
+$('#refChips').addEventListener('click',e=>{ const b=e.target.closest('[data-c]'); if(b){ refGroup=b.dataset.c; renderRef(); } });
+$('#refSearch').addEventListener('input',renderRef);
+
+/* ---------- 모아보기 ---------- */
+function renderHist(){
+  const T=DB.targets; const days=[];
+  for(let i=0;i<14;i++) days.push(addDays(CUR,-i));
+  const head = `<tr><th>날짜</th>${GROUPS.map(g=>`<th>${g.n}<br><span class="muted" style="font-size:10.5px">${fmt(T[g.k])}</span></th>`).join('')}</tr>`;
+  const COL={good:'rgba(87,160,111,.18)',warn:'rgba(211,154,53,.2)',over:'rgba(217,116,138,.2)',idle:'transparent'};
+  const body = days.map(d=>{
+    const it=dayItems(d);
+    if(!it.length) return `<tr class="clk" data-d="${d}"><td>${pretty(d)}</td><td colspan="${GROUPS.length}" class="muted">기록 없음</td></tr>`;
+    const {g}=totals(it);
+    return `<tr class="clk" data-d="${d}"><td>${pretty(d)}</td>${GROUPS.map(gr=>{ const j=judge(gr.k,g[gr.k],T[gr.k]); return `<td><span class="cell" style="background:${COL[j.cls]}">${fmt(g[gr.k])}</span></td>`; }).join('')}</tr>`;
+  }).join('');
+  $('#histTable').innerHTML = head+body;
+
+  // 최근 7일 요약
+  const week = days.slice(0,7).filter(d=>dayItems(d).length);
+  if(!week.length){ $('#weekCard').innerHTML=`<h2>📈 최근 7일 평균</h2><p class="muted" style="margin:0">기록이 쌓이면 평균과 적정일 수를 보여드려요.</p>`; return; }
+  const rows = GROUPS.map(gr=>{
+    let sum=0, ok=0;
+    week.forEach(d=>{ const e=totals(dayItems(d)).g[gr.k]; sum+=e; if(judge(gr.k,e,T[gr.k]).cls==='good') ok++; });
+    const avg=sum/week.length, j=judge(gr.k,avg,T[gr.k]);
+    return `<tr><td><b>${gr.n}</b></td><td class="num">${fmt(avg)} / ${fmt(T[gr.k])}</td><td class="num">${ok}/${week.length}일</td><td><span class="badge b-${j.cls}">${j.txt}</span></td></tr>`;
+  }).join('');
+  $('#weekCard').innerHTML = `<h2>📈 최근 7일 평균 <span class="muted" style="font-weight:500">(기록한 ${week.length}일)</span></h2>
+    <table><thead><tr><th>식품군</th><th style="text-align:right">하루 평균</th><th style="text-align:right">적정한 날</th><th>평균 판정</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+$('#histTable').addEventListener('click',e=>{ const r=e.target.closest('[data-d]'); if(r){ CUR=r.dataset.d; switchTab('today'); renderAll(); window.scrollTo(0,0); } });
+
+/* ---------- 설정 ---------- */
+function renderSet(){
+  $('#targetSet').innerHTML = GROUPS.map(g=>`<div><label>${g.n}</label><input type="number" step="0.5" min="0" inputmode="decimal" data-t="${g.k}" value="${DB.targets[g.k]}"></div>`).join('');
+  $('#mealPlanSet').innerHTML = `<div class="set">${['b','l','d'].map(k=>{ const m=MEALS.find(x=>x.k===k); return `
+    <div><label>${m.n} 곡류</label><input type="number" step="0.5" min="0" inputmode="decimal" data-mp="${k}.grain" value="${DB.mealPlan[k].grain}"></div>
+    <div><label>${m.n} 어육류</label><input type="number" step="0.5" min="0" inputmode="decimal" data-mp="${k}.meat" value="${DB.mealPlan[k].meat}"></div>
+    <div></div>`; }).join('')}</div><p class="muted" style="margin:6px 0 0">병원 식단표: 아침 밥 1/2공기(곡류 1.5), 점심 곡류 2, 저녁 곡류 3 · 어육류는 끼니마다 2</p>`;
+}
+$('#targetSet').addEventListener('change',e=>{ const k=e.target.dataset.t; if(!k) return; const v=Number(e.target.value); if(v>=0){ DB.targets[k]=v; save(); renderAll(); toast('권장량 저장됨'); } });
+$('#mealPlanSet').addEventListener('change',e=>{ const p=e.target.dataset.mp; if(!p) return; const [m,g]=p.split('.'); const v=Number(e.target.value); if(v>=0){ DB.mealPlan[m][g]=v; save(); renderAll(); toast('끼니 계획 저장됨'); } });
+$('#resetTargets').addEventListener('click',()=>{ DB.targets={...DEFAULT_TARGETS}; DB.mealPlan=JSON.parse(JSON.stringify(DEFAULT_MEALPLAN)); save(); renderAll(); toast('기본값으로 되돌렸어요'); });
+$('#exportBtn').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`식품교환기록_${ymd(new Date())}.json`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+$('#importBtn').addEventListener('click',()=>$('#importFile').click());
+$('#importFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!d || typeof d.days!=='object') throw 0;
+    const n=Object.keys(d.days).length;
+    if(!confirm(`백업의 ${n}일치 기록을 불러올까요? 같은 날짜의 현재 기록은 백업 내용으로 바뀌어요.`)) return;
+    Object.assign(DB.days, d.days);
+    if(d.targets) DB.targets=Object.assign({},DEFAULT_TARGETS,d.targets);
+    if(d.mealPlan) DB.mealPlan=Object.assign({},DB.mealPlan,d.mealPlan);
+    if(Array.isArray(d.recent)) DB.recent=d.recent;
+    save(); renderAll(); toast('불러오기 완료');
+  }catch(err){ toast('백업 파일을 읽지 못했어요'); }
+  e.target.value='';
+});
+
+/* ---------- 탭 / 날짜 ---------- */
+function switchTab(t){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  ['today','table','hist','set'].forEach(k=>$('#tab-'+k).hidden = k!==t);
+  try{ localStorage.setItem(KEY+'_tab',t); }catch(e){}
+}
+document.querySelector(".tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); if(b){ switchTab(b.dataset.tab); window.scrollTo(0,0); } });
+function renderDate(){ $('#curDate').textContent = pretty(CUR) + (CUR===ymd(new Date())?' · 오늘':''); $('#datePick').value=CUR; }
+$('#prevDay').addEventListener('click',()=>{ CUR=addDays(CUR,-1); renderAll(); });
+$('#nextDay').addEventListener('click',()=>{ CUR=addDays(CUR,1); renderAll(); });
+$('#goToday').addEventListener('click',()=>{ CUR=ymd(new Date()); renderAll(); });
+$('#datePick').addEventListener('change',e=>{ if(e.target.value){ CUR=e.target.value; renderAll(); } });
+
+function renderAll(){ renderDate(); renderToday(); renderHist(); renderSet(); }
+renderStd(); renderRef(); renderAll();
+try{ const t=localStorage.getItem(KEY+'_tab'); if(t && t!=='set') switchTab(t); }catch(e){}
+</script>
+</body>
+</html>
