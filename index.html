@@ -50,6 +50,19 @@ header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,var(--
 .tabs{display:flex;gap:6px;background:var(--chip);padding:5px;border-radius:14px;margin:12px 0 18px;position:sticky;top:64px;z-index:15}
 .tabs button{flex:1;border:none;background:none;color:var(--sub);font-size:13px;font-weight:600;padding:9px 4px;border-radius:10px;cursor:pointer;transition:.15s;font-family:inherit}
 .tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tabs button{white-space:nowrap}
+@media (max-width:440px){.tabs{gap:3px;padding:4px}.tabs button{font-size:11.5px;padding:8px 1px;letter-spacing:-.3px}}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal .dow{text-align:center;font-size:11px;font-weight:700;color:var(--sub);padding:2px 0}
+.cal .dow.sun{color:var(--over)} .cal .dow.sat{color:#6a9fd4}
+.cal .d{border:1px solid var(--line);border-radius:10px;min-height:52px;padding:4px 2px;text-align:center;cursor:pointer;background:var(--card);font-family:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:2px}
+.cal .d.blank{border:none;background:none;cursor:default}
+.cal .d .n{font-size:12px;font-weight:700}
+.cal .d .k{font-size:10.5px;font-weight:700;line-height:1.1;letter-spacing:-.3px}
+.cal .d.today{outline:2px solid var(--sage);outline-offset:-1px}
+.cal .d.lo{background:#fdf4e3} .cal .d.ok{background:#e9f4ee} .cal .d.hi{background:#fbe8ec}
+.cal .d.lo .k{color:#b07d22} .cal .d.ok .k{color:var(--sage-d)} .cal .d.hi .k{color:#c0536b}
+@media (prefers-color-scheme:dark){.cal .d.lo{background:#3a321f}.cal .d.ok{background:#22372c}.cal .d.hi{background:#3d2329}.cal .d.lo .k{color:#f0c46a}.cal .d.hi .k{color:#f29bb0}}
 
 /* Cards */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
@@ -184,6 +197,7 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
       <button data-tab="body">⚖️ 몸 상태</button>
       <button data-tab="diet">🍚 식단</button>
       <button data-tab="exercise">🏃‍♀️ 운동</button>
+      <button data-tab="month">📅 월별</button>
     </div>
   </header>
 
@@ -192,6 +206,7 @@ h3.sec{font-size:13px;color:var(--sub);margin:18px 0 8px;font-weight:700;text-tr
     <section id="tab-body" hidden></section>
     <section id="tab-diet" hidden></section>
     <section id="tab-exercise" hidden></section>
+    <section id="tab-month" hidden></section>
   </main>
 </div>
 
@@ -432,7 +447,7 @@ const DEFAULT={
     {id:'vitd', name:'비타민D', dose:'2,000 IU', emoji:'☀️', nutrients:{vitD:2000}},
     {id:'lactofit', name:'락토핏 유산균', dose:'1포(2g) · 40억 CFU', emoji:'🦠', nutrients:{kcal:10, carb:2, zinc:2.55}}
   ],
-  diet:{}, exercise:{}, water:{}, suppLog:{}, stool:{}, customFoods:[], updatedAt:0
+  diet:{}, exercise:{}, water:{}, suppLog:{}, stool:{}, stoolNote:{}, customFoods:[], updatedAt:0
 };
 function applyDefaults(p){
   const db=Object.assign({},JSON.parse(JSON.stringify(DEFAULT)),p||{});
@@ -441,7 +456,7 @@ function applyDefaults(p){
   db.supplements=(p&&p.supplements)||JSON.parse(JSON.stringify(DEFAULT.supplements));
   // 저장된 목록에 없는 기본 영양제를 자동으로 채워줌 (id 기준, 중복 없이)
   DEFAULT.supplements.forEach(ds=>{ if(!db.supplements.some(s=>s.id===ds.id)) db.supplements.push(JSON.parse(JSON.stringify(ds))); });
-  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{}; db.stool=(p&&p.stool)||{};
+  db.diet=(p&&p.diet)||{}; db.exercise=(p&&p.exercise)||{}; db.water=(p&&p.water)||{}; db.suppLog=(p&&p.suppLog)||{}; db.stool=(p&&p.stool)||{}; db.stoolNote=(p&&p.stoolNote)||{};
   db.customFoods=(p&&p.customFoods)||[];
   db.updatedAt=(p&&p.updatedAt)||0;
   return db;
@@ -914,6 +929,13 @@ function addWater(ml){ (DB.water[SEL]=DB.water[SEL]||[]).push(ml); save(); rende
 function undoWater(){ const l=DB.water[SEL]; if(l&&l.length){ l.pop(); if(!l.length) delete DB.water[SEL]; save(); renderDiet(); renderDash(); } }
 function getStool(dateStr){ return DB.stool[dateStr]||0; }
 function addStool(delta){ const c=Math.max(0,(DB.stool[SEL]||0)+delta); if(c>0) DB.stool[SEL]=c; else delete DB.stool[SEL]; save(); renderBody(); }
+function getStoolNote(dateStr){ return (DB.stoolNote&&DB.stoolNote[dateStr])||''; }
+let stoolNoteTimer=null;
+function setStoolNote(v){
+  DB.stoolNote=DB.stoolNote||{};
+  v=v.trim(); if(v) DB.stoolNote[SEL]=v; else delete DB.stoolNote[SEL];
+  clearTimeout(stoolNoteTimer); stoolNoteTimer=setTimeout(save,600);
+}
 function latestWeight(uptoDate){
   const sorted=[...DB.weight].filter(w=>w.date<=(uptoDate||'9999')).sort((a,b)=>a.date<b.date?1:-1);
   return sorted.length?sorted[0].kg : DB.settings.prePreg;
@@ -1066,11 +1088,16 @@ function donut(pct,color){
   </svg>`;
 }
 
+let W_SHOW_ALL=false;
 function renderBody(){
   const el=document.getElementById('tab-body');
   const sorted=[...DB.weight].sort((a,b)=>a.date<b.date?-1:1);
   const curW=latestWeight();
   const bmi=r1(curW/Math.pow(DB.settings.height/100,2));
+  const allW=sorted.slice().reverse();
+  const weekAgo=addDays(fmt(new Date()),-6);
+  const recentW=allW.filter(w=>w.date>=weekAgo);
+  const wShown=W_SHOW_ALL?allW:recentW;
   el.innerHTML=`
   <div class="card">
     <h2><span class="e">⚖️</span> 체중 추이</h2>
@@ -1100,20 +1127,31 @@ function renderBody(){
   <div class="card">
     <h2><span class="e">📋</span> 기록 목록</h2>
     <div id="wList">
-      ${sorted.slice().reverse().map((w,i)=>`
+      ${wShown.map((w,i)=>`
         <div class="item">
           <div class="ic">⚖️</div>
           <div class="nm"><b>${w.kg} kg</b><span>${w.date}${w.note?' · '+w.note:''}</span></div>
           <button class="del" data-wdel="${w.date}">✕</button>
-        </div>`).join('')||'<div class="empty">기록이 없어요</div>'}
+        </div>`).join('')||`<div class="empty">${allW.length?'최근 1주일 기록이 없어요':'기록이 없어요'}</div>`}
     </div>
+    ${allW.length>recentW.length?`<button class="btn ghost sm" id="wMore" style="width:100%;margin-top:10px">${W_SHOW_ALL?'▲ 최근 1주일만 보기':`▼ 더보기 (이전 기록 ${allW.length-recentW.length}개)`}</button>`:''}
   </div>`;
   el.querySelector('#addWeight').onclick=openWeight;
   el.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=()=>{
     DB.weight=DB.weight.filter(w=>w.date!==b.dataset.wdel); save(); renderBody(); renderHeader();
   });
   el.querySelectorAll('[data-stool]').forEach(b=>b.onclick=()=>addStool(+b.dataset.stool));
+  const sn=el.querySelector('#stoolNote');
+  sn.oninput=()=>setStoolNote(sn.value);
+  el.querySelectorAll('[data-snote]').forEach(b=>b.onclick=()=>{
+    const t=b.dataset.snote.replace(/^\S+\s/,'');
+    const cur=sn.value.trim();
+    if(cur.split(/,\s*/).includes(t)) return;
+    sn.value=cur?cur+', '+t:t; setStoolNote(sn.value);
+  });
+  const mb=el.querySelector('#wMore'); if(mb) mb.onclick=()=>{ W_SHOW_ALL=!W_SHOW_ALL; renderBody(); };
 }
+function escHtml(t){ return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function stoolCard(){
   const c=getStool(SEL);
@@ -1131,6 +1169,13 @@ function stoolCard(){
     <div class="chips">
       <button data-stool="1">🚽 한 번 기록 +1</button>
       <button data-stool="-1">↩ 되돌리기</button>
+    </div>
+    <div style="margin-top:12px">
+      <div class="muted" style="margin-bottom:6px;font-weight:600">📝 상태 메모</div>
+      <textarea id="stoolNote" rows="2" placeholder="예) 보통, 조금 딱딱함, 복통 없음">${escHtml(getStoolNote(SEL))}</textarea>
+      <div class="chips">
+        ${['😊 정상','🪨 딱딱함','💧 묽음','😣 잔변감','🩸 출혈','🤕 복통'].map(t=>`<button data-snote="${t}">${t}</button>`).join('')}
+      </div>
     </div>
     <div class="note" style="margin-top:12px"><span class="e">💡</span><div>임신 중에는 호르몬 변화와 철분제 영향으로 변비가 흔해요. 물·식이섬유·가벼운 운동이 도움이 됩니다. 3일 이상 배변이 없거나 통증·출혈이 있으면 산부인과에 상담하세요.</div></div>
   </div>`;
@@ -1165,6 +1210,64 @@ function weightChart(data){
     <text x="${pad}" y="${H-8}" font-size="10" fill="var(--sub)">${firstL}</text>
     <text x="${W-pad}" y="${H-8}" text-anchor="end" font-size="10" fill="var(--sub)">${lastL}</text>
   </svg></div>`;
+}
+
+/* ============ 월별 종합 (달력) ============ */
+let CAL_MONTH=null; // 'YYYY-MM'
+function renderMonth(){
+  const el=document.getElementById('tab-month');
+  if(!CAL_MONTH) CAL_MONTH=SEL.slice(0,7);
+  const [y,m]=CAL_MONTH.split('-').map(Number);
+  const days=new Date(y,m,0).getDate(), startDow=new Date(y,m-1,1).getDay();
+  const today=fmt(new Date());
+  let cells='', logged=0, sum=0, ok=0, burnSum=0, exDays=0;
+  for(let i=0;i<startDow;i++) cells+='<div class="d blank"></div>';
+  for(let d=1;d<=days;d++){
+    const ds=y+'-'+pad(m)+'-'+pad(d);
+    const has=(DB.diet[ds]||[]).length>0;
+    let cls='', k='';
+    if(has){
+      const kcal=dayNutri(ds).kcal, pct=kcal/targets(gestAt(ds).w).kcal*100;
+      cls=pct<70?'lo':pct<=110?'ok':'hi'; k=r0(kcal);
+      logged++; sum+=kcal; if(cls==='ok') ok++;
+    }
+    const b=dayBurn(ds); if(b>0){burnSum+=b;exDays++;}
+    const dow=(startDow+d-1)%7;
+    cells+=`<button class="d ${cls}${ds===today?' today':''}" data-cal="${ds}">
+      <span class="n" style="${dow===0?'color:var(--over)':dow===6?'color:#6a9fd4':''}">${d}</span>
+      <span class="k">${k}</span>${b>0?'<span style="font-size:9px">🏃‍♀️</span>':''}
+    </button>`;
+  }
+  el.innerHTML=`
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="iconbtn" id="calPrev">‹</button>
+      <h2 style="margin:0">📅 ${y}년 ${m}월 식단</h2>
+      <button class="iconbtn" id="calNext">›</button>
+    </div>
+    <div class="cal">
+      ${['일','월','화','수','목','금','토'].map((w,i)=>`<div class="dow${i===0?' sun':i===6?' sat':''}">${w}</div>`).join('')}
+      ${cells}
+    </div>
+    <div class="legend" style="margin-top:10px">
+      <span><i style="background:#f0d9a8"></i>목표 70% 미만</span>
+      <span><i style="background:#bfe0cd"></i>적정 70~110%</span>
+      <span><i style="background:#f3c2cd"></i>초과</span>
+    </div>
+    <div class="muted" style="margin-top:6px">숫자 = 그날 섭취 kcal · 🏃‍♀️ 운동한 날 · 날짜를 누르면 그날 식단으로 이동해요</div>
+  </div>
+  <div class="card">
+    <h2><span class="e">🗒️</span> ${m}월 종합</h2>
+    <div class="grid3">
+      <div class="tile"><div class="lab">식단 기록</div><div class="val">${logged}<small> 일</small></div><div class="sub">${days}일 중</div></div>
+      <div class="tile"><div class="lab">하루 평균</div><div class="val">${logged?r0(sum/logged):'-'}<small> kcal</small></div><div class="sub">기록한 날 기준</div></div>
+      <div class="tile"><div class="lab">적정 섭취일</div><div class="val">${ok}<small> 일</small></div><div class="sub">운동 ${exDays}일 · ${r0(burnSum)}kcal</div></div>
+    </div>
+  </div>`;
+  const shift=n=>{ const d=new Date(y,m-1+n,1); CAL_MONTH=d.getFullYear()+'-'+pad(d.getMonth()+1); renderMonth(); };
+  el.querySelector('#calPrev').onclick=()=>shift(-1);
+  el.querySelector('#calNext').onclick=()=>shift(1);
+  el.querySelectorAll('[data-cal]').forEach(b=>b.onclick=()=>{ SEL=b.dataset.cal; renderAll(); showTab('diet'); });
 }
 
 function mealOf(f){ return MEALS.some(m=>m.k===f.meal)?f.meal:'아침'; }
@@ -1759,10 +1862,11 @@ function importData(file){
 }
 
 /* ============ 탭/네비 ============ */
-function renderAll(){ renderHeader(); renderDash(); renderBody(); renderDiet(); renderExercise(); }
+function renderAll(){ renderHeader(); renderDash(); renderBody(); renderDiet(); renderExercise(); renderMonth(); }
 function showTab(name){
+  if(name==='month') renderMonth();
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
-  ['dash','body','diet','exercise'].forEach(t=>document.getElementById('tab-'+t).hidden=(t!==name));
+  ['dash','body','diet','exercise','month'].forEach(t=>document.getElementById('tab-'+t).hidden=(t!==name));
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
@@ -1856,7 +1960,7 @@ function isEmptyDB(db){
     if(db.inbody) return false;
     if(Array.isArray(db.weight)&&db.weight.length) return false;
     if(Array.isArray(db.customFoods)&&db.customFoods.length) return false;
-    if(n(db.diet)||n(db.exercise)||n(db.water)||n(db.suppLog)||n(db.stool)) return false;
+    if(n(db.diet)||n(db.exercise)||n(db.water)||n(db.suppLog)||n(db.stool)||n(db.stoolNote)) return false;
     return true; // settings/supplements 기본값만 있음 → 빈 것으로 간주
   }catch(e){ return false; }
 }
