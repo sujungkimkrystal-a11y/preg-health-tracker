@@ -95,6 +95,16 @@ header{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 0 6px;
 .item .t .s{font-size:11.5px;color:var(--sub)}
 .item .u{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .item .x{border:none;background:none;color:var(--sub);font-size:17px;cursor:pointer;padding:2px 4px}
+.item.auto .t .s{color:var(--sage-d)}
+.item.auto .exs{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.item.auto .exs span{font-size:11px;padding:1px 6px;border-radius:10px;background:var(--chip);font-weight:600}
+.item.off{opacity:.45}
+.item.off .t{text-decoration:line-through}
+.item .undo{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;font-size:11.5px;padding:3px 8px;cursor:pointer}
+.autobar{font-size:12.5px;background:rgba(111,174,143,.12);color:var(--sage-d);border-radius:12px;padding:9px 12px;margin-bottom:12px;font-weight:600;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.autobar button{border:none;background:var(--sage);color:#fff;border-radius:9px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;font-weight:600}
+.switch input{width:22px;height:22px;accent-color:var(--sage)}
 .mealwarn{font-size:12px;color:var(--over);margin-top:6px;font-weight:600}
 
 /* reference */
@@ -224,6 +234,11 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
         <div class="set" id="targetSet"></div>
         <p class="muted" style="margin:10px 0 0">병원에서 받은 처방 기준(곡류 6.5 · 어육류 6 · 채소 8 · 과일 2 · 우유 2 · 지방 6)이 기본값이에요. 처방이 바뀌면 여기서 고쳐 주세요.</p>
         <button class="btn2" id="resetTargets">처방 기본값으로 되돌리기</button>
+      </div>
+      <div class="card">
+        <h2>🔗 식단 기록 자동 반영</h2>
+        <label class="switch"><span>건강기록 앱 '식단'에 적은 음식을 교환단위로 자동 계산</span><input type="checkbox" id="autoToggle"></label>
+        <p class="muted" style="margin:8px 0 0">예) 소고기국밥 1그릇 → 곡류 2.5 · 어육류(중) 2.5 · 채소 1. 음식의 탄수화물·단백질·지방으로 계산한 <b>근사치</b>예요. 맞지 않는 음식은 ✕로 빼고 ‘+ 추가’로 직접 넣어 주세요. 아침·점심·저녁은 그대로, 간식은 ‘오후 간식’에 들어가요.</p>
       </div>
       <div class="card">
         <h2>🍱 끼니별 곡류·어육류 계획</h2>
@@ -417,7 +432,105 @@ function pretty(s){ const d=parseYmd(s); return `${d.getMonth()+1}월 ${d.getDat
 let toastT; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1800); }
 
 let CUR = ymd(new Date());
-const dayItems = s => DB.days[s] || [];
+
+/* ---------- 식단(건강기록 앱) → 교환단위 자동 계산 ---------- */
+/* 식단 음식(이름·카테고리·제공량g + 탄/단/지) → 식품교환 단위 추정 (근사치) */
+function exEstimate(name, cat, grams, C, P, F){
+  name = name||''; C=+C||0; P=+P||0; F=+F||0; grams=+grams||0;
+  const has = re => re.test(name);
+  const u = {grain:0, meat_l:0, meat_m:0, meat_h:0, veg:0, fruit:0, milk_w:0, milk_l:0, fat:0};
+  const MILKY = /우유|라떼|요거트|요구르트|요플레|두유|밀크|카페오레|코코아|핫초코/;
+  const CHEESE = /치즈|모짜렐라|코티지/;
+  const FRUITY = /주스|스무디|과일|사과|바나나|오렌지|귤|포도|딸기|수박|참외|키위|복숭아|자두|망고|파인애플|블루베리|체리|홍시|곶감|자몽|멜론|메론|건포도|대추|무화과|석류/;
+  const STARCH = /고구마|감자|옥수수|밤$|토란|콩자반/;
+  const VEGDISH = /나물|무침|생채|김치|깍두기|볶음|샐러드|채소|야채|상추|깻잎|오이|당근|양배추|양파|부추|버섯|가지|브로콜리|파프리카|토마토|호박|숙주|콩나물|미역|김$|김자반|구운김/;
+  // 1) 당질 공급원
+  let src = 'grain';
+  if(has(/^(아보카도|버터|마요네즈|올리브)/)) src='fatonly';
+  else if(has(CHEESE) && !has(/케이크|버거|피자|샌드|토스트/)) src='cheese';
+  else if(cat==='과일') src='fruit';
+  else if(has(MILKY) && !has(/빵|케이크|떡/)) src='milk';
+  else if(cat==='유제품') src='milk';
+  else if(has(STARCH)) src='grain';
+  else if((cat==='채소'||cat==='반찬·김치') && has(VEGDISH) && !has(/어묵|진미|멸치|장조림|두부|계란|달걀/)) src='veg';
+  else if(cat==='채소') src='veg';
+  else if(has(/주스|스무디/) || ((cat==='견과·간식'||cat==='내 음식') && has(FRUITY))) src='fruit';
+  else if(cat==='내 음식' && has(FRUITY) && !has(/빵|케이크|떡|과자|파이/)) src='fruit';
+  // 2) 채소 몫
+  let veg = 0;
+  if(src==='veg') veg = grams ? grams/(has(/김치|깍두기/)?50:70) : C/3;
+  else if(cat==='국·탕·찌개' || has(/국밥|순댓국|해장국/)) veg = 1;
+  else if(has(/비빔|쌈|샐러드|야채|채소|나물|월남쌈|샤브|전골|볶음밥|잡채|김밥|카레|짜장|짬뽕|냉면|쫄면|볶음면/)) veg = 1;
+  if(src!=='veg') veg = Math.min(veg, C/3);
+  u.veg = veg;
+  const Crem = Math.max(0, C - veg*3);
+  // 3) 당질 → 곡/과일/우유
+  if(src==='grain'){ if(Crem >= 8) u.grain = Crem/23; }
+  else if(src==='fruit') u.fruit = Crem/12;
+  else if(src==='milk'){
+    const m = Math.max(0.5, P/6*0.6, Math.min(Crem/10, P/6 + 0.4));
+    if(has(/저지방|무지방|라이트|요구르트|요플레|요거트(?!.*그릭)/) && !has(/그릭/)) u.milk_l = m; else u.milk_w = m;
+    const sugar = Crem - m*10;           // 가당 우유·아이스크림 등 남는 당질 → 곡류로
+    if(sugar >= 8) u.grain = sugar/23;
+  }
+  // 4) 단백질 → 어육류
+  const milkU = u.milk_w + u.milk_l;
+  const Prem = P - u.grain*2 - u.veg*2 - milkU*6;
+  let meat = Prem >= 3.5 ? Prem/8 : 0;
+  // 5) 어육류 지방 등급
+  let lvl = 'meat_m';
+  if(has(/삼겹|갈비|족발|보쌈|소시지|베이컨|치킨|텐더|너겟|튀김|돈까스|돈가스|까스|순대|곱창|막창|대창|꼬리|스팸|체다/)) lvl='meat_h';
+  else if(has(/계란|달걀|메추리/)) lvl='meat_m';
+  else if(has(/닭가슴|가슴살|생선|광어|대구|동태|명태|북어|북엇|황태|조기|가자미|오징어|진미|낙지|문어|새우|조개|바지락|굴$|홍합|전복|게맛|맛살|어묵|오뎅|연어|참치회|회$|회덮밥|사태|안심|장조림|육포|멸치/)) lvl='meat_l';
+  if(src==='cheese'){ lvl = has(/체다|파마산/)?'meat_h':'meat_m'; meat = P/8; }
+  if(src==='fatonly'){ meat = 0; u.veg = 0; u.grain = 0; }
+  u[lvl] = meat;
+  // 6) 남는 지방 → 지방군
+  const fatPer = {meat_l:2, meat_m:5, meat_h:8}[lvl];
+  const Frem = F - meat*fatPer - u.milk_w*7 - u.milk_l*2;
+  u.fat = Frem >= 2.5 ? Frem/5 : 0;
+  // 7) 0.5 단위 반올림 (0.25 미만 버림)
+  for(const k in u){ const v=u[k]; u[k] = v<0.25 ? 0 : Math.round(v*2)/2; }
+  return u;
+}
+// 건강기록 앱 기본 음식: 이름 → [카테고리, 1인분 g]
+const DIET_CATS = ["밥·죽","면류","빵·시리얼","국·탕·찌개","고기","생선·해산물","달걀·콩·두부","채소","과일","유제품","견과·간식","음료","분식·길거리","패스트푸드","반찬·김치","디저트"];
+const DIET_FOODS = {"흰쌀밥":[0,210],"잡곡밥":[0,210],"현미밥":[0,210],"보리밥":[0,210],"콩밥":[0,210],"비빔밥":[0,450],"김치볶음밥":[0,300],"새우볶음밥":[0,300],"오므라이스":[0,0],"카레라이스":[0,0],"초밥":[0,0],"김밥":[0,200],"참치김밥":[0,230],"주먹밥":[0,120],"흰죽":[0,0],"전복죽":[0,0],"잔치국수":[1,0],"칼국수":[1,0],"짜장면":[1,0],"짬뽕":[1,0],"라면":[1,120],"비빔면":[1,0],"냉면(물)":[1,0],"비빔냉면":[1,0],"우동":[1,0],"쌀국수":[1,0],"토마토파스타":[1,0],"크림파스타":[1,0],"막국수":[1,0],"식빵":[2,35],"통밀식빵":[2,35],"베이글":[2,90],"크루아상":[2,60],"모닝빵":[2,30],"단팥빵":[2,80],"크림빵":[2,90],"소보로빵":[2,90],"햄치즈샌드위치":[2,0],"에그머핀":[2,0],"콘플레이크":[2,40],"오트밀":[2,40],"그래놀라":[2,50],"팬케이크":[2,0],"미역국":[3,0],"된장찌개":[3,0],"김치찌개":[3,0],"순두부찌개":[3,0],"부대찌개":[3,0],"갈비탕":[3,0],"설렁탕":[3,0],"삼계탕":[3,0],"육개장":[3,0],"콩나물국":[3,0],"계란국":[3,0],"떡국":[3,0],"만둣국":[3,0],"삼겹살 구이":[4,100],"목살 구이":[4,100],"소고기 등심":[4,100],"소고기 안심":[4,100],"닭가슴살":[4,100],"닭다리살":[4,100],"훈제오리":[4,100],"제육볶음":[4,200],"불고기":[4,200],"양념갈비":[4,0],"스테이크":[4,200],"돈까스":[4,0],"탕수육":[4,0],"소시지":[4,100],"햄":[4,40],"베이컨":[4,30],"연어 구이":[5,100],"고등어 구이":[5,100],"삼치 구이":[5,100],"갈치 구이":[5,100],"참치회":[5,100],"새우":[5,100],"오징어":[5,100],"문어":[5,100],"바지락":[5,100],"굴":[5,100],"게맛살":[5,60],"멸치볶음":[5,30],"참치캔":[5,100],"어묵":[5,100],"달걀":[6,50],"삶은달걀":[6,100],"계란후라이":[6,0],"계란찜":[6,0],"계란말이":[6,100],"두부":[6,150],"순두부":[6,300],"두부부침":[6,0],"낫토":[6,50],"검은콩":[6,30],"병아리콩":[6,50],"렌틸콩":[6,50],"두유":[6,190],"시금치나물":[7,70],"브로콜리":[7,100],"아보카도":[7,70],"방울토마토":[7,100],"토마토":[7,150],"샐러드채소":[7,100],"오이":[7,150],"당근":[7,120],"파프리카":[7,120],"고구마":[7,150],"감자":[7,150],"단호박":[7,100],"옥수수":[7,150],"버섯볶음":[7,80],"애호박볶음":[7,80],"나물무침(3종)":[7,100],"콩나물무침":[7,70],"사과":[8,200],"바나나":[8,120],"오렌지":[8,150],"귤":[8,150],"딸기":[8,100],"블루베리":[8,100],"키위":[8,80],"포도":[8,100],"수박":[8,200],"참외":[8,200],"배":[8,150],"복숭아":[8,180],"망고":[8,100],"파인애플":[8,100],"자몽":[8,150],"우유":[9,200],"저지방우유":[9,200],"그릭요거트":[9,100],"플레인요거트":[9,85],"가당요거트":[9,120],"치즈":[9,20],"모짜렐라":[9,30],"버터":[9,14],"아이스크림":[9,100],"요거트드링크":[9,150],"아몬드":[10,18],"호두":[10,15],"땅콩":[10,20],"믹스넛":[10,25],"감자칩":[10,60],"팝콘":[10,30],"초콜릿":[10,30],"초코파이":[10,35],"쿠키":[10,30],"크래커":[10,30],"에너지바":[10,40],"가래떡":[10,100],"인절미":[10,90],"호떡":[10,0],"붕어빵":[10,0],"아메리카노":[11,0],"카페라떼":[11,0],"믹스커피":[11,0],"녹차":[11,0],"콜라":[11,250],"사이다":[11,250],"오렌지주스":[11,200],"사과주스":[11,200],"이온음료":[11,500],"밀크티":[11,0],"과일스무디":[11,0],"에너지드링크":[11,250],"떡볶이":[12,300],"라볶이":[12,0],"순대":[12,200],"튀김(모듬)":[12,0],"김말이":[12,0],"만두":[12,150],"군만두":[12,0],"핫도그":[12,0],"길거리토스트":[12,0],"계란빵":[12,0],"불고기버거":[13,0],"치즈버거":[13,0],"빅버거":[13,0],"감자튀김":[13,0],"치킨너겟":[13,0],"후라이드치킨":[13,100],"양념치킨":[13,100],"피자":[13,120],"타코":[13,0],"김치":[14,50],"깍두기":[14,50],"구운김":[14,0],"진미채무침":[14,30],"콩자반":[14,30],"감자조림":[14,60],"장조림":[14,40],"멸치볶음(반찬)":[14,30],"케이크":[15,90],"치즈케이크":[15,90],"도넛":[15,60],"마카롱":[15,0],"빙수":[15,0],"푸딩":[15,0],"브라우니":[15,0],"와플":[15,0],"젤리":[15,30],"제육덮밥":[0,0],"불고기덮밥":[0,0],"소고기국밥":[0,0],"콩나물국밥":[0,0],"순댓국":[0,0],"유부초밥":[0,0],"회덮밥":[0,0],"누룽지":[0,0],"야채죽":[0,0],"소고기덮밥":[0,0],"참치마요덮밥":[0,0],"스팸김밥":[0,0],"콩국수":[1,0],"쫄면":[1,0],"수제비":[1,0],"마라탕":[1,0],"짜파게티":[1,0],"볶음면":[1,0],"열무국수":[1,0],"오일파스타":[1,0],"바게트":[2,60],"카스텔라":[2,60],"머핀":[2,80],"스콘":[2,70],"마늘빵":[2,0],"프렌치토스트":[2,0],"롤케이크":[2,0],"곰탕":[3,0],"감자탕":[3,0],"북엇국":[3,0],"어묵탕":[3,0],"청국장":[3,0],"갈비찜":[3,0],"김칫국":[3,0],"매운탕":[3,0],"닭갈비":[4,250],"닭볶음탕":[4,0],"보쌈":[4,200],"족발":[4,200],"곱창구이":[4,150],"닭꼬치":[4,0],"LA갈비":[4,200],"오리주물럭":[4,200],"장어구이":[5,100],"광어회":[5,100],"낙지":[5,100],"전복":[5,100],"홍합":[5,100],"명란젓":[5,30],"가지볶음":[7,80],"양배추":[7,100],"양파":[7,80],"상추":[7,50],"깻잎":[7,20],"콩나물":[7,70],"숙주나물":[7,70],"무생채":[7,70],"미역초무침":[7,70],"부추":[7,50],"체리":[8,100],"자두":[8,70],"감":[8,150],"멜론":[8,200],"석류":[8,80],"무화과":[8,100],"레몬":[8,60],"초코우유":[9,200],"딸기우유":[9,200],"바나나우유":[9,240],"체다치즈":[9,20],"코티지치즈":[9,100],"요플레":[9,85],"피스타치오":[10,20],"마카다미아":[10,20],"해바라기씨":[10,20],"건포도":[10,30],"말린대추":[10,30],"곶감":[10,30],"양갱":[10,50],"찹쌀떡":[10,70],"백설기":[10,80],"꿀떡":[10,75],"뻥튀기":[10,20],"핫초코":[11,200],"아이스티":[11,300],"유자차":[11,0],"식혜":[11,200],"매실차":[11,0],"제로콜라":[11,250],"야쿠르트":[11,65],"미숫가루":[11,30],"로제떡볶이":[12,0],"잡채":[12,150],"파전":[12,0],"김치전":[12,0],"감자전":[12,0],"오뎅꼬치":[12,0],"번데기":[12,60],"새우버거":[13,0],"치킨버거":[13,0],"에그마요샌드(15cm)":[13,0],"부리토":[13,0],"코울슬로":[13,0],"치킨텐더":[13,0],"어묵볶음":[14,60],"두부조림":[14,80],"김자반":[14,10],"오이무침":[14,60],"계란장조림":[14,0],"나박김치":[14,70],"티라미수":[15,0],"츄러스":[15,0],"젤라또":[15,100],"크레페":[15,0],"단팥죽":[15,0],"에그타르트":[15,60],"호두과자":[15,0]};
+const DIET_MEAL = {'아침':'b','점심':'l','저녁':'d','간식':'s2'};
+const SUB_SHORT = {grain:'곡',meat_l:'어육(저)',meat_m:'어육(중)',meat_h:'어육(고)',veg:'채소',fruit:'과일',milk_w:'우유',milk_l:'우유(저)',fat:'지방'};
+let DIET = null;
+function loadDiet(){ try{ const d=JSON.parse(localStorage.getItem('preg_health_v1')||'null'); DIET=(d&&d.diet)||{}; }catch(e){ DIET={}; } }
+loadDiet();
+if(!DB.autoSince){ DB.autoSince = addDays(ymd(new Date()),1); save(); }   // 이 기능 이전 날짜 보호용
+DB.autoOff = DB.autoOff||{};   // {날짜: [제외한 음식 key]}
+DB.autoDays = DB.autoDays||{}; // {날짜: true} 예전 날짜에 자동 반영 켜기
+function dietKey(r,i){ return (r.name||'')+'|'+(r.meal||'아침')+'|'+Math.round(r.kcal||0)+'|'+i; }
+// 이날 식단 기록을 교환단위로 바꾼 목록 (제외 여부 포함)
+function dietEx(s){
+  const recs = (DIET&&DIET[s])||[];
+  const off = DB.autoOff[s]||[];
+  return recs.map((r,i)=>{
+    const info = DIET_FOODS[r.name];
+    const cat = info ? DIET_CATS[info[0]] : '내 음식';
+    const grams = info ? info[1]*(r.qty||1) : 0;
+    const u = exEstimate(r.name, cat, grams, r.carb, r.protein, r.fat);
+    const key = dietKey(r,i);
+    return {key, name:r.name, qty:r.qty, kcal:r.kcal||0, meal:DIET_MEAL[r.meal]||'b', u, off:off.includes(key)};
+  });
+}
+function autoState(s){
+  if(DB.autoDisabled) return 'disabled';
+  if(!((DIET&&DIET[s])||[]).length) return 'none';
+  if(s < DB.autoSince && (DB.days[s]||[]).length && !DB.autoDays[s]) return 'legacy';
+  return 'on';
+}
+function autoItems(s){
+  if(autoState(s)!=='on') return [];
+  const out=[];
+  dietEx(s).forEach(d=>{ if(d.off) return; for(const k in d.u) if(d.u[k]>0) out.push({id:'auto:'+d.key+':'+k, auto:true, meal:d.meal, sub:k, name:d.name, u:d.u[k]}); });
+  return out;
+}
+const dayItems = s => (DB.days[s] || []).concat(autoItems(s));
 
 function totals(items){
   const g = {grain:0,meat:0,veg:0,fruit:0,milk:0,fat:0}; const n={kcal:0,c:0,p:0,f:0};
@@ -466,14 +579,18 @@ function renderSummary(){
   }).join('');
 
   const planC = T.grain*23 + T.veg*3 + T.fruit*12 + T.milk*10;
-  $('#summaryCard').innerHTML = `<h2>📊 ${pretty(CUR)} 합계</h2>${v}${rows}
+  const st = autoState(CUR);
+  let bar = '';
+  if(st==='legacy') bar = `<div class="autobar"><span>이날은 교환표에 직접 기록한 게 있어서 식단 자동 계산을 넣지 않았어요 (중복 방지)</span><button id="autoMerge">식단 계산도 합치기</button></div>`;
+  else if(st==='on'){ const n=dietEx(CUR).filter(d=>!d.off).length; if(n) bar = `<div class="autobar"><span>🔗 식단 기록 ${n}개를 자동으로 반영했어요 (근사치)</span></div>`; }
+  $('#summaryCard').innerHTML = `<h2>📊 ${pretty(CUR)} 합계</h2>${bar}${v}${rows}
     <div class="tiles">
       <div class="tile"><div class="l">열량</div><div class="v">${Math.round(n.kcal)}<small> kcal</small></div></div>
       <div class="tile"><div class="l">당질</div><div class="v">${Math.round(n.c)}<small> / ${Math.round(planC)}g</small></div></div>
       <div class="tile"><div class="l">단백질</div><div class="v">${Math.round(n.p)}<small> g</small></div></div>
       <div class="tile"><div class="l">지방</div><div class="v">${Math.round(n.f)}<small> g</small></div></div>
     </div>
-    <p class="muted" style="margin:8px 0 0">세로선 = 권장량 · 적정 범위는 권장량 ±0.5 (지방 ±1). 채소는 넉넉히 먹어도 좋아요.</p>`;
+    ${DB.autoDays[CUR]&&CUR<DB.autoSince?'<p class="muted" style="margin:8px 0 0">이날은 식단 자동 계산을 합쳐서 보고 있어요. <a href="#" id="autoUnmerge">합치기 취소</a></p>':''}<p class="muted" style="margin:8px 0 0">세로선 = 권장량 · 적정 범위는 권장량 ±0.5 (지방 ±1). 채소는 넉넉히 먹어도 좋아요.</p>`;
 }
 
 function renderMeals(){
@@ -489,13 +606,19 @@ function renderMeals(){
     }).join('');
     let warn='';
     if(plan && g.grain > plan.grain + 0.5) warn = `<div class="mealwarn">이 끼니 곡류가 계획보다 ${fmt(g.grain-plan.grain)} 많아요 — 식후 혈당 체크해 보세요.</div>`;
-    const list = its.map(it=>{
+    const list = its.filter(it=>!it.auto).map(it=>{
       const s=SUB[it.sub];
       return `<div class="item"><span class="dot" style="background:${GMAP[s.grp].color}"></span>
         <div class="t">${esc(it.name)}<div class="s">${s.label}${it.g?` · ${fmt(it.g)}g`:''}</div></div>
         <span class="u">${fmt(it.u)}</span>
         <button class="x" data-del="${it.id}" aria-label="삭제">✕</button></div>`;
-    }).join('');
+    }).join('') + (autoState(CUR)==='on' ? dietEx(CUR).filter(d=>d.meal===m.k).map(d=>{
+      const parts = Object.keys(d.u).filter(k=>d.u[k]>0).map(k=>`<span>${SUB_SHORT[k]} ${fmt(d.u[k])}</span>`).join('');
+      return `<div class="item auto${d.off?' off':''}"><span class="dot" style="background:var(--sage)"></span>
+        <div class="t">🔗 ${esc(d.name)}${d.qty&&d.qty!==1?` ×${fmt(d.qty)}`:''}<div class="s">식단 기록에서 자동 계산 · ${Math.round(d.kcal)}kcal</div>
+        ${d.off?'':`<div class="exs">${parts||'<span>교환단위 없음</span>'}</div>`}</div>
+        ${d.off?`<button class="undo" data-aon="${esc(d.key)}">되돌리기</button>`:`<button class="x" data-aoff="${esc(d.key)}" aria-label="계산에서 빼기">✕</button>`}</div>`;
+    }).join('') : '');
     return `<div class="meal">
       <div class="meal-hd"><div><h3>${m.e} ${m.n}</h3><div class="plan">계획: ${planTxt}</div></div>
       <button class="addbtn" data-add="${m.k}">+ 추가</button></div>
@@ -507,9 +630,16 @@ function renderToday(){ renderSummary(); renderMeals(); }
 
 $('#meals').addEventListener('click',e=>{
   const a=e.target.closest('[data-add]'); if(a){ openAdd(a.dataset.add); return; }
+  const ao=e.target.closest('[data-aoff]'), an=e.target.closest('[data-aon]');
+  if(ao||an){
+    const k=(ao||an).dataset[ao?'aoff':'aon'], arr=DB.autoOff[CUR]||[];
+    DB.autoOff[CUR] = ao ? arr.concat(k) : arr.filter(x=>x!==k);
+    if(!DB.autoOff[CUR].length) delete DB.autoOff[CUR];
+    save(); renderToday(); renderHist(); toast(ao?'이 음식은 교환표 계산에서 뺐어요':'다시 포함했어요'); return;
+  }
   const d=e.target.closest('[data-del]');
   if(d){
-    const arr=dayItems(CUR); const i=arr.findIndex(x=>x.id===d.dataset.del);
+    const arr=DB.days[CUR]||[]; const i=arr.findIndex(x=>x.id===d.dataset.del);
     if(i>=0){ const [rm]=arr.splice(i,1); if(!arr.length) delete DB.days[CUR]; save(); renderToday(); renderHist(); toast(`${rm.name} 삭제됨`); }
   }
 });
@@ -627,6 +757,7 @@ $('#histTable').addEventListener('click',e=>{ const r=e.target.closest('[data-d]
 
 /* ---------- 설정 ---------- */
 function renderSet(){
+  $('#autoToggle').checked = !DB.autoDisabled;
   $('#targetSet').innerHTML = GROUPS.map(g=>`<div><label>${g.n}</label><input type="number" step="0.5" min="0" inputmode="decimal" data-t="${g.k}" value="${DB.targets[g.k]}"></div>`).join('');
   $('#mealPlanSet').innerHTML = `<div class="set">${['b','l','d'].map(k=>{ const m=MEALS.find(x=>x.k===k); return `
     <div><label>${m.n} 곡류</label><input type="number" step="0.5" min="0" inputmode="decimal" data-mp="${k}.grain" value="${DB.mealPlan[k].grain}"></div>
@@ -671,7 +802,16 @@ $('#nextDay').addEventListener('click',()=>{ CUR=addDays(CUR,1); renderAll(); })
 $('#goToday').addEventListener('click',()=>{ CUR=ymd(new Date()); renderAll(); });
 $('#datePick').addEventListener('change',e=>{ if(e.target.value){ CUR=e.target.value; renderAll(); } });
 
-function renderAll(){ renderDate(); renderToday(); renderHist(); renderSet(); }
+function renderAll(){ loadDiet(); renderDate(); renderToday(); renderHist(); renderSet(); }
+$('#summaryCard').addEventListener('click',e=>{
+  if(e.target.id==='autoMerge'){ DB.autoDays[CUR]=true; save(); renderAll(); toast('식단 계산을 합쳤어요'); }
+  if(e.target.id==='autoUnmerge'){ e.preventDefault(); delete DB.autoDays[CUR]; save(); renderAll(); }
+});
+$('#autoToggle').addEventListener('change',e=>{ DB.autoDisabled=!e.target.checked; save(); renderAll(); toast(e.target.checked?'식단 자동 반영 켬':'식단 자동 반영 끔'); });
+// 건강기록 앱에서 식단을 고치고 돌아오면 다시 계산
+window.addEventListener('pageshow',()=>renderAll());
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) renderAll(); });
+window.addEventListener('storage',e=>{ if(e.key==='preg_health_v1') renderAll(); });
 renderStd(); renderRef(); renderAll();
 try{ const t=localStorage.getItem(KEY+'_tab'); if(t && t!=='set') switchTab(t); }catch(e){}
 </script>
