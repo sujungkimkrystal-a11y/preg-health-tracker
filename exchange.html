@@ -108,6 +108,12 @@ header{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 0 6px;
 .sync{border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:20px;padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;text-decoration:none;cursor:pointer}
 .sync.ok{color:var(--sage-d)} .sync.err{color:var(--over)}
 @media(max-width:440px){.brand p{display:none}.brand h1{white-space:nowrap;font-size:16px}.hd .iconbtn{padding:0 8px;font-size:12px}.sync{padding:6px 8px;font-size:11.5px}}
+.aibtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;font-size:11.5px;padding:3px 8px;cursor:pointer;margin-top:5px;font-weight:600}
+.aibtn[disabled]{opacity:.5}
+.ailist{margin-top:4px;font-size:12px;color:var(--ink)}
+.ailist div{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+.ailist b{font-weight:700;white-space:nowrap}
+.ainote{font-size:11px;color:var(--sub);margin-top:2px}
 .mealwarn{font-size:12px;color:var(--over);margin-top:6px;font-weight:600}
 
 /* reference */
@@ -244,7 +250,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="card">
         <h2>🔗 식단 기록 자동 반영</h2>
         <label class="switch"><span>건강기록 앱 '식단'에 적은 음식을 교환단위로 자동 계산</span><input type="checkbox" id="autoToggle"></label>
-        <p class="muted" style="margin:8px 0 0">예) 소고기국밥 1그릇 → 곡류 2.5 · 어육류(중) 2.5 · 채소 1. 음식의 탄수화물·단백질·지방으로 계산한 <b>근사치</b>예요. 맞지 않는 음식은 ✕로 빼고 ‘+ 추가’로 직접 넣어 주세요. 아침·점심·저녁은 그대로, 간식은 ‘오후 간식’에 들어가요.</p>
+        <p class="muted" style="margin:8px 0 0">예) 소고기국밥 1그릇 → 곡류 2.5 · 어육류(중) 2.5 · 채소 1. 음식의 탄수화물·단백질·지방으로 계산한 <b>근사치</b>예요. 직접 입력한 음식처럼 재료를 모르는 경우엔 ‘🤖 AI로 재료 분석’을 누르면 재료별(예: 채소·풀드포크·타코 셸·소스)로 나눠 줘요. 한 번 분석한 음식은 저장돼서 다음부터 바로 적용돼요. 맞지 않는 음식은 ✕로 빼고 ‘+ 추가’로 직접 넣어 주세요. 아침·점심·저녁은 그대로, 간식은 ‘오후 간식’에 들어가요.</p>
       </div>
       <div class="card">
         <h2>🍱 끼니별 곡류·어육류 계획</h2>
@@ -531,6 +537,16 @@ loadDiet();
 if(!DB.autoSince){ DB.autoSince = addDays(ymd(new Date()),1); save(); }   // 이 기능 이전 날짜 보호용
 DB.autoOff = DB.autoOff||{};   // {날짜: [제외한 음식 key]}
 DB.autoDays = DB.autoDays||{}; // {날짜: true} 예전 날짜에 자동 반영 켜기
+DB.aiEx = DB.aiEx||{};   // {음식이름: {basis:{kcal,carb,protein,fat}, items:[{ingredient,group,units}], dish, note, ts} | {removed:true, ts}}
+function aiFor(r){
+  const a=DB.aiEx[(r.name||'').trim()];
+  if(!a||a.removed||!Array.isArray(a.items)||!a.items.length) return null;
+  const B=a.basis||{};
+  // 같은 음식을 다른 양으로 먹었으면 탄수화물(없으면 열량) 비율로 맞춤
+  const f = B.carb>0&&r.carb>0 ? r.carb/B.carb : B.kcal>0&&r.kcal>0 ? r.kcal/B.kcal : 1;
+  const items=a.items.map(it=>({ingredient:it.ingredient, group:it.group, units:Math.round(it.units*f*2)/2})).filter(it=>it.units>0);
+  return {items, dish:a.dish||'', note:a.note||''};
+}
 function dietKey(r,i){ return (r.name||'')+'|'+(r.meal||'아침')+'|'+Math.round(r.kcal||0)+'|'+i; }
 // 이날 식단 기록을 교환단위로 바꾼 목록 (제외 여부 포함)
 function dietEx(s){
@@ -542,7 +558,9 @@ function dietEx(s){
     const grams = info ? info[1]*(r.qty||1) : 0;
     const u = exEstimate(r.name, cat, grams, r.carb, r.protein, r.fat, r.qty);
     const key = dietKey(r,i);
-    return {key, name:r.name, qty:r.qty, kcal:r.kcal||0, meal:DIET_MEAL[r.meal]||'b', u, off:off.includes(key)};
+    const ai = aiFor(r);
+    if(ai){ for(const k in u) u[k]=0; ai.items.forEach(it=>{ if(u[it.group]!==undefined) u[it.group]+=it.units; }); }
+    return {key, name:r.name, qty:r.qty, kcal:r.kcal||0, carb:r.carb, protein:r.protein, fat:r.fat, meal:DIET_MEAL[r.meal]||'b', u, ai, off:off.includes(key)};
   });
 }
 function autoState(s){
@@ -643,7 +661,10 @@ function renderMeals(){
       const parts = Object.keys(d.u).filter(k=>d.u[k]>0).map(k=>`<span>${SUB_SHORT[k]} ${fmt(d.u[k])}</span>`).join('');
       return `<div class="item auto${d.off?' off':''}"><span class="dot" style="background:var(--sage)"></span>
         <div class="t">🔗 ${esc(d.name)}${d.qty&&d.qty!==1?` ×${fmt(d.qty)}`:''}<div class="s">식단 기록에서 자동 계산 · ${Math.round(d.kcal)}kcal</div>
-        ${d.off?'':`<div class="exs">${parts||'<span>교환단위 없음</span>'}</div>`}</div>
+        ${d.off?'':d.ai?`<div class="ailist">${d.ai.items.map(it=>`<div><span>${esc(it.ingredient)}</span><b>${SUB_SHORT[it.group]} ${fmt(it.units)}</b></div>`).join('')}</div>
+          <div class="ainote">🤖 AI 재료 분석${d.ai.note?' · '+esc(d.ai.note):''}</div>
+          <button class="aibtn" data-ai="${esc(d.key)}">🤖 다시 분석</button> <button class="aibtn" data-aiundo="${esc(d.name)}">숫자 계산으로 되돌리기</button>`
+          :`<div class="exs">${parts||'<span>교환단위 없음</span>'}</div><button class="aibtn" data-ai="${esc(d.key)}">🤖 AI로 재료 분석</button>`}</div>
         ${d.off?`<button class="undo" data-aon="${esc(d.key)}">되돌리기</button>`:`<button class="x" data-aoff="${esc(d.key)}" aria-label="계산에서 빼기">✕</button>`}</div>`;
     }).join('') : '');
     return `<div class="meal">
@@ -657,6 +678,9 @@ function renderToday(){ renderSummary(); renderMeals(); }
 
 $('#meals').addEventListener('click',e=>{
   const a=e.target.closest('[data-add]'); if(a){ openAdd(a.dataset.add); return; }
+  const ab=e.target.closest('[data-ai]'); if(ab){ runAi(ab.dataset.ai, ab); return; }
+  const au=e.target.closest('[data-aiundo]');
+  if(au){ DB.aiEx[au.dataset.aiundo.trim()]={removed:true, ts:Date.now()}; save(); renderToday(); renderHist(); toast('숫자 계산으로 되돌렸어요'); return; }
   const ao=e.target.closest('[data-aoff]'), an=e.target.closest('[data-aon]');
   if(ao||an){
     const k=(ao||an).dataset[ao?'aoff':'aon'], arr=DB.autoOff[CUR]||[];
@@ -840,6 +864,24 @@ window.addEventListener('pageshow',()=>renderAll());
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) renderAll(); });
 window.addEventListener('storage',e=>{ if(e.key==='preg_health_v1') renderAll(); });
 
+/* ---------- AI 재료 분석 ---------- */
+async function runAi(key, btn){
+  const d=dietEx(CUR).find(x=>x.key===key); if(!d) return;
+  if(!sb||!cloudUser){ toast('AI 분석은 건강기록 앱에서 로그인한 뒤 쓸 수 있어요'); return; }
+  btn.disabled=true; btn.textContent='🤖 분석 중… (최대 20초)';
+  try{
+    const {data,error}=await sb.functions.invoke('exchange-ai',{body:{name:d.name, qty:d.qty, kcal:Math.round(d.kcal), carb:d.carb, protein:d.protein, fat:d.fat}});
+    if(error) throw error;
+    if(!data||!data.ok||!data.result||!(data.result.items||[]).length) throw new Error((data&&(data.error||data.message))||'empty');
+    DB.aiEx[(d.name||'').trim()]={basis:{kcal:d.kcal||0, carb:d.carb||0, protein:d.protein||0, fat:d.fat||0}, items:data.result.items, dish:data.result.dish||'', note:data.result.note||'', ts:Date.now()};
+    save(); renderToday(); renderHist(); toast('AI가 재료별로 나눴어요');
+  }catch(e){
+    btn.disabled=false; btn.textContent='🤖 AI로 재료 분석';
+    toast('AI 분석 실패 — 잠시 후 다시 눌러 주세요');
+    console.error('exchange-ai', e);
+  }
+}
+
 /* ---------- 클라우드 동기화 (건강기록 앱과 같은 계정) ---------- */
 const SUPA_URL='https://otmyuwjoagpkymcbuigv.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90bXl1d2pvYWdwa3ltY2J1aWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NzcwOTYsImV4cCI6MjEwMDM1MzA5Nn0.k891FvoK0lkYtw018mch4QZ6l-OjcNdUpX5ztYQDHyY';
@@ -869,6 +911,8 @@ function mergeEx(L,R){
   });
   if((R.setTs||0)>(L.setTs||0)){ SET_KEYS.forEach(k=>{ if(R[k]!==undefined) M[k]=JSON.parse(JSON.stringify(R[k])); }); M.setTs=R.setTs; }
   if(R.autoSince && (!M.autoSince || R.autoSince>M.autoSince)) M.autoSince=R.autoSince;
+  M.aiEx=M.aiEx||{};
+  Object.entries(R.aiEx||{}).forEach(([k,v])=>{ if(!M.aiEx[k] || (v&&v.ts||0)>(M.aiEx[k].ts||0)) M.aiEx[k]=JSON.parse(JSON.stringify(v)); });
   M.targets=Object.assign({},DEFAULT_TARGETS,M.targets||{});
   M.mealPlan=Object.assign({},JSON.parse(JSON.stringify(DEFAULT_MEALPLAN)),M.mealPlan||{});
   M.recent=M.recent||[];
