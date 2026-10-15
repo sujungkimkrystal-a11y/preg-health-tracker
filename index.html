@@ -1220,7 +1220,7 @@ function renderMonth(){
   const [y,m]=CAL_MONTH.split('-').map(Number);
   const days=new Date(y,m,0).getDate(), startDow=new Date(y,m-1,1).getDay();
   const today=fmt(new Date());
-  let cells='', logged=0, sum=0, ok=0, burnSum=0, exDays=0;
+  let cells='', logged=0, sum=0, ok=0, burnSum=0, exDays=0, stoolDays=0, stoolSum=0;
   for(let i=0;i<startDow;i++) cells+='<div class="d blank"></div>';
   for(let d=1;d<=days;d++){
     const ds=y+'-'+pad(m)+'-'+pad(d);
@@ -1232,10 +1232,11 @@ function renderMonth(){
       logged++; sum+=kcal; if(cls==='ok') ok++;
     }
     const b=dayBurn(ds); if(b>0){burnSum+=b;exDays++;}
+    const st=getStool(ds); if(st>0){stoolDays++;stoolSum+=st;}
     const dow=(startDow+d-1)%7;
     cells+=`<button class="d ${cls}${ds===today?' today':''}" data-cal="${ds}">
       <span class="n" style="${dow===0?'color:var(--over)':dow===6?'color:#6a9fd4':''}">${d}</span>
-      <span class="k">${k}</span>${b>0?'<span style="font-size:9px">🏃‍♀️</span>':''}
+      <span class="k">${k}</span>${b>0||st>0?`<span style="font-size:10px;line-height:1">${b>0?'🏃‍♀️':''}${st>0?'🚽'+(st>1?st:''):''}</span>`:''}
     </button>`;
   }
   el.innerHTML=`
@@ -1254,7 +1255,7 @@ function renderMonth(){
       <span><i style="background:#bfe0cd"></i>적정 70~110%</span>
       <span><i style="background:#f3c2cd"></i>초과</span>
     </div>
-    <div class="muted" style="margin-top:6px">숫자 = 그날 섭취 kcal · 🏃‍♀️ 운동한 날 · 날짜를 누르면 그날 식단으로 이동해요</div>
+    <div class="muted" style="margin-top:6px">숫자 = 그날 섭취 kcal · 🏃‍♀️ 운동 · 🚽 배변(숫자는 횟수) · 날짜를 누르면 그날 식단으로 이동해요</div>
   </div>
   <div class="card">
     <h2><span class="e">🗒️</span> ${m}월 종합</h2>
@@ -1262,6 +1263,7 @@ function renderMonth(){
       <div class="tile"><div class="lab">식단 기록</div><div class="val">${logged}<small> 일</small></div><div class="sub">${days}일 중</div></div>
       <div class="tile"><div class="lab">하루 평균</div><div class="val">${logged?r0(sum/logged):'-'}<small> kcal</small></div><div class="sub">기록한 날 기준</div></div>
       <div class="tile"><div class="lab">적정 섭취일</div><div class="val">${ok}<small> 일</small></div><div class="sub">운동 ${exDays}일 · ${r0(burnSum)}kcal</div></div>
+      <div class="tile"><div class="lab">배변</div><div class="val">${stoolDays}<small> 일</small></div><div class="sub">총 ${stoolSum}회</div></div>
     </div>
   </div>`;
   const shift=n=>{ const d=new Date(y,m-1+n,1); CAL_MONTH=d.getFullYear()+'-'+pad(d.getMonth()+1); renderMonth(); };
