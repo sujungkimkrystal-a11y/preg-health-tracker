@@ -105,6 +105,9 @@ header{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 0 6px;
 .autobar button{border:none;background:var(--sage);color:#fff;border-radius:9px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;font-weight:600}
 .switch input{width:22px;height:22px;accent-color:var(--sage)}
+.sync{border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:20px;padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;text-decoration:none;cursor:pointer}
+.sync.ok{color:var(--sage-d)} .sync.err{color:var(--over)}
+@media(max-width:440px){.brand p{display:none}.brand h1{white-space:nowrap;font-size:16px}.hd .iconbtn{padding:0 8px;font-size:12px}.sync{padding:6px 8px;font-size:11.5px}}
 .mealwarn{font-size:12px;color:var(--over);margin-top:6px;font-weight:600}
 
 /* reference */
@@ -176,7 +179,10 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
           <p>임신성 당뇨 하루 권장 섭취량 체크</p>
         </div>
       </div>
-      <a class="iconbtn" href="index.html" title="건강기록으로">← 건강기록</a>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="sync" id="syncChip" title="클라우드 동기화">☁️ …</button>
+        <a class="iconbtn" href="index.html" title="건강기록으로">← 건강기록</a>
+      </div>
     </div>
     <div class="datebar">
       <button id="prevDay" aria-label="이전 날">‹</button>
@@ -246,7 +252,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       </div>
       <div class="card">
         <h2>💾 백업</h2>
-        <p class="muted" style="margin:0 0 8px">기록은 이 기기의 브라우저에 저장돼요. 폰을 바꾸거나 브라우저 데이터를 지우기 전에 백업 파일을 받아 두세요.</p>
+        <p class="muted" style="margin:0 0 8px">건강기록 앱과 같은 계정으로 로그인돼 있으면 기록이 <b>클라우드에 자동 저장</b>되고 폰·PC가 같은 기록을 봐요(위 ☁️ 표시). 이전 버전도 클라우드에 보관돼요. 백업 파일은 추가 안전장치예요.</p>
         <button class="btn" id="exportBtn">백업 파일 저장</button>
         <button class="btn2" id="importBtn">백업 파일 불러오기</button>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -279,6 +285,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ---------- 식품군 기준 (1교환단위) ---------- */
 const SUB = {
@@ -417,7 +424,25 @@ function load(){
   return d;
 }
 let DB = load();
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){ toast('저장 실패: 브라우저 저장공간을 확인해 주세요'); } }
+/* 날짜별 변경 시각(dayTs)과 설정 변경 시각(setTs)을 기록해서, 폰·PC 기록을 날짜 단위로 합칠 수 있게 함 */
+const SET_KEYS=['targets','mealPlan','recent','autoDisabled'];
+function daySnap(d,dt){ return JSON.stringify([(d.days||{})[dt]||null,(d.autoOff||{})[dt]||null,(d.autoDays||{})[dt]||null]); }
+function allDates(...ds){ const o={}; ds.forEach(d=>['days','autoOff','autoDays','dayTs'].forEach(k=>Object.keys((d&&d[k])||{}).forEach(x=>o[x]=1))); return Object.keys(o); }
+function setSnap(d){ return JSON.stringify(SET_KEYS.map(k=>d[k]===undefined?null:d[k])); }
+let SNAP=null;
+function takeSnap(){ SNAP={set:setSnap(DB), days:{}}; allDates(DB).forEach(dt=>SNAP.days[dt]=daySnap(DB,dt)); }
+function save(){
+  const now=Date.now();
+  DB.dayTs=DB.dayTs||{};
+  if(SNAP){
+    allDates(DB,{days:Object.fromEntries(Object.keys(SNAP.days).map(k=>[k,1]))}).forEach(dt=>{ if(daySnap(DB,dt)!==(SNAP.days[dt]||daySnap({},dt))) DB.dayTs[dt]=now; });
+    if(setSnap(DB)!==SNAP.set) DB.setTs=now;
+  }
+  takeSnap();
+  try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){ toast('저장 실패: 브라우저 저장공간을 확인해 주세요'); }
+  if(typeof schedulePush==='function') schedulePush();
+}
+takeSnap();
 
 /* ---------- 유틸 ---------- */
 const $ = s=>document.querySelector(s);
@@ -500,7 +525,8 @@ const DIET_FOODS = {"흰쌀밥":[0,210],"잡곡밥":[0,210],"현미밥":[0,210],
 const DIET_MEAL = {'아침':'b','점심':'l','저녁':'d','간식':'s2'};
 const SUB_SHORT = {grain:'곡',meat_l:'어육(저)',meat_m:'어육(중)',meat_h:'어육(고)',veg:'채소',fruit:'과일',milk_w:'우유',milk_l:'우유(저)',fat:'지방'};
 let DIET = null;
-function loadDiet(){ try{ const d=JSON.parse(localStorage.getItem('preg_health_v1')||'null'); DIET=(d&&d.diet)||{}; }catch(e){ DIET={}; } }
+let CLOUD_DIET=null;
+function loadDiet(){ try{ const d=JSON.parse(localStorage.getItem('preg_health_v1')||'null'); DIET=(d&&d.diet)||{}; }catch(e){ DIET={}; } if(CLOUD_DIET) DIET=Object.assign({},DIET,CLOUD_DIET); }
 loadDiet();
 if(!DB.autoSince){ DB.autoSince = addDays(ymd(new Date()),1); save(); }   // 이 기능 이전 날짜 보호용
 DB.autoOff = DB.autoOff||{};   // {날짜: [제외한 음식 key]}
@@ -813,6 +839,81 @@ $('#autoToggle').addEventListener('change',e=>{ DB.autoDisabled=!e.target.checke
 window.addEventListener('pageshow',()=>renderAll());
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) renderAll(); });
 window.addEventListener('storage',e=>{ if(e.key==='preg_health_v1') renderAll(); });
+
+/* ---------- 클라우드 동기화 (건강기록 앱과 같은 계정) ---------- */
+const SUPA_URL='https://otmyuwjoagpkymcbuigv.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90bXl1d2pvYWdwa3ltY2J1aWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NzcwOTYsImV4cCI6MjEwMDM1MzA5Nn0.k891FvoK0lkYtw018mch4QZ6l-OjcNdUpX5ztYQDHyY';
+let sb=null, cloudUser=null, pushTimer=null, syncing=false, syncAgain=false;
+function syncUI(st,msg){
+  const c=$('#syncChip'); c.className='sync'+(st==='ok'?' ok':st==='err'?' err':'');
+  c.textContent = st==='ok'?'☁️ 저장됨' : st==='busy'?'☁️ 동기화 중…' : st==='err'?'⚠️ 동기화 오류' : '☁️ 로그인 필요';
+  c.title = msg||'';
+}
+/* 날짜별로 더 최근에 고친 쪽을 택함. 시각이 같으면(옛 기록) 두 쪽 항목을 id 기준으로 합침 → 어느 기기 기록도 잃지 않음 */
+function mergeEx(L,R){
+  if(!R||typeof R!=='object') return L;
+  const M=JSON.parse(JSON.stringify(L));
+  ['days','autoOff','autoDays','dayTs'].forEach(k=>M[k]=M[k]||{});
+  const lt=L.dayTs||{}, rt=R.dayTs||{};
+  allDates(L,R).forEach(dt=>{
+    const a=lt[dt]||0, b=rt[dt]||0;
+    const pick=(k,v)=>{ if(v===undefined||v===null) delete M[k][dt]; else M[k][dt]=JSON.parse(JSON.stringify(v)); };
+    if(b>a){ pick('days',(R.days||{})[dt]); pick('autoOff',(R.autoOff||{})[dt]); pick('autoDays',(R.autoDays||{})[dt]); M.dayTs[dt]=b; }
+    else if(b===a){
+      const ids={}; const out=[];
+      ((L.days||{})[dt]||[]).concat((R.days||{})[dt]||[]).forEach(it=>{ if(!ids[it.id]){ ids[it.id]=1; out.push(it); } });
+      if(out.length) M.days[dt]=out;
+      const off=[...new Set(((L.autoOff||{})[dt]||[]).concat((R.autoOff||{})[dt]||[]))]; if(off.length) M.autoOff[dt]=off;
+      if((L.autoDays||{})[dt]||(R.autoDays||{})[dt]) M.autoDays[dt]=true;
+    }
+  });
+  if((R.setTs||0)>(L.setTs||0)){ SET_KEYS.forEach(k=>{ if(R[k]!==undefined) M[k]=JSON.parse(JSON.stringify(R[k])); }); M.setTs=R.setTs; }
+  if(R.autoSince && (!M.autoSince || R.autoSince>M.autoSince)) M.autoSince=R.autoSince;
+  M.targets=Object.assign({},DEFAULT_TARGETS,M.targets||{});
+  M.mealPlan=Object.assign({},JSON.parse(JSON.stringify(DEFAULT_MEALPLAN)),M.mealPlan||{});
+  M.recent=M.recent||[];
+  return M;
+}
+async function syncNow(){
+  if(!sb||!cloudUser) return;
+  if(syncing){ syncAgain=true; return; }
+  syncing=true; syncUI('busy');
+  try{
+    const {data,error}=await sb.from('exchange_state').select('data').eq('user_id',cloudUser.id).maybeSingle();
+    if(error) throw error;
+    const remote=data&&data.data;
+    const merged=mergeEx(DB,remote);
+    const changedLocal = JSON.stringify(merged)!==JSON.stringify(DB);
+    DB=merged; takeSnap();
+    try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){}
+    if(JSON.stringify(merged)!==JSON.stringify(remote||null)){
+      const {error:e2}=await sb.from('exchange_state').upsert({user_id:cloudUser.id,data:merged,updated_at:new Date().toISOString()});
+      if(e2) throw e2;
+    }
+    // 식단은 건강기록 클라우드 값도 읽어서(읽기 전용) 이 기기에 최신이 없을 때 보완
+    try{
+      const {data:pd}=await sb.from('pregnancy_state').select('data').eq('user_id',cloudUser.id).maybeSingle();
+      const loc=JSON.parse(localStorage.getItem('preg_health_v1')||'null');
+      if(pd&&pd.data&&pd.data.diet&&(!loc||(pd.data.updatedAt||0)>(loc.updatedAt||0))) CLOUD_DIET=pd.data.diet;
+    }catch(e){}
+    if(changedLocal||CLOUD_DIET) renderAll();
+    syncUI('ok','마지막 동기화 '+new Date().toLocaleTimeString());
+  }catch(e){ syncUI('err', String(e&&e.message||e)); }
+  finally{ syncing=false; if(syncAgain){ syncAgain=false; schedulePush(); } }
+}
+function schedulePush(){ if(!sb||!cloudUser) return; clearTimeout(pushTimer); pushTimer=setTimeout(syncNow,1200); }
+$('#syncChip').addEventListener('click',()=>{ if(cloudUser) syncNow(); else location.href='index.html'; });
+(function initCloud(){
+  if(typeof supabase==='undefined'){ syncUI('err','네트워크 연결을 확인해 주세요'); return; }
+  try{ sb=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'preg_auth'}}); }catch(e){ syncUI('err'); return; }
+  sb.auth.getSession().then(({data})=>{
+    if(data&&data.session&&data.session.user){ cloudUser=data.session.user; syncNow(); }
+    else { syncUI('off','건강기록 앱에서 로그인하면 교환표도 클라우드에 저장돼요'); toast('클라우드 저장을 하려면 건강기록 앱에서 로그인해 주세요'); }
+  });
+  sb.auth.onAuthStateChange((evt,session)=>{ if(evt==='SIGNED_OUT'){ cloudUser=null; syncUI('off'); } else if(session&&session.user&&!cloudUser){ cloudUser=session.user; syncNow(); } });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&cloudUser) syncNow(); });
+  window.addEventListener('online',()=>{ if(cloudUser) syncNow(); });
+})();
 renderStd(); renderRef(); renderAll();
 try{ const t=localStorage.getItem(KEY+'_tab'); if(t && t!=='set') switchTab(t); }catch(e){}
 </script>
